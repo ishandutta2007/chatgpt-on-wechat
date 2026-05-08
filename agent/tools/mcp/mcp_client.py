@@ -7,6 +7,7 @@ MCP SDK dependency.
 
 import json
 import os
+import select
 import subprocess
 import threading
 import urllib.request
@@ -39,6 +40,7 @@ class McpClient:
         # Shared state
         self._next_id = 1
         self._id_lock = threading.Lock()
+        self._call_lock = threading.Lock()
         self._initialized = False
 
     # ------------------------------------------------------------------
@@ -133,7 +135,25 @@ class McpClient:
             env=env,
         )
         logger.debug(f"[MCP:{self.name}] stdio process started (pid={self._proc.pid})")
+
+        threading.Thread(
+            target=self._drain_stderr, daemon=True, name=f"mcp-stderr-{self.name}"
+        ).start()
+
         return self._handshake()
+
+    def _drain_stderr(self):
+        for line in self._proc.stderr:
+            line = line.strip()
+            if line:
+                logger.debug(f"[MCP:{self.name}] stderr: {line}")
+
+    def _readline_with_timeout(self, timeout: int = 30) -> str:
+        """Read one line from stdio stdout with a hard timeout."""
+        ready, _, _ = select.select([self._proc.stdout], [], [], timeout)
+        if not ready:
+            raise TimeoutError(f"[MCP:{self.name}] stdio read timed out after {timeout}s")
+        return self._proc.stdout.readline()
 
     def _stdio_send(self, message: dict) -> dict:
         """Send a JSON-RPC message over stdio and read the response."""
@@ -142,13 +162,20 @@ class McpClient:
         self._proc.stdin.flush()
 
         while True:
-            line = self._proc.stdout.readline()
+            line = self._readline_with_timeout()
             if not line:
                 raise IOError(f"[MCP:{self.name}] stdio process closed unexpectedly")
             line = line.strip()
             if not line:
                 continue
-            return json.loads(line)
+            try:
+                data = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if "id" not in data:
+                logger.debug(f"[MCP:{self.name}] notification skipped: {data.get('method', '?')}")
+                continue
+            return data
 
     # ------------------------------------------------------------------
     # SSE transport
@@ -235,12 +262,13 @@ class McpClient:
 
         message = self._build_request(method, params)
 
-        if self.transport == "stdio":
-            return self._stdio_send(message)
-        elif self.transport == "sse":
-            return self._sse_send(message)
-        else:
-            raise ValueError(f"[MCP:{self.name}] Unsupported transport: {self.transport}")
+        with self._call_lock:
+            if self.transport == "stdio":
+                return self._stdio_send(message)
+            elif self.transport == "sse":
+                return self._sse_send(message)
+            else:
+                raise ValueError(f"[MCP:{self.name}] Unsupported transport: {self.transport}")
 
     def _send_notification(self, method: str, params: dict):
         """Fire-and-forget notification (no response expected)."""

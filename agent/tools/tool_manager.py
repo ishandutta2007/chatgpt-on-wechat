@@ -7,6 +7,26 @@ from common.log import logger
 from config import conf
 
 
+def _normalize_mcp_configs(raw) -> list:
+    """
+    Convert MCP server config to internal list format.
+    Supports:
+      - list format (mcp_servers):  [{"name": "x", "type": "stdio", ...}]
+      - dict format (mcpServers):   {"x": {"command": "npx", ...}}
+    """
+    if isinstance(raw, list):
+        return raw
+    if isinstance(raw, dict):
+        result = []
+        for name, cfg in raw.items():
+            entry = {"name": name, **cfg}
+            if "type" not in entry:
+                entry["type"] = "sse" if "url" in entry else "stdio"
+            result.append(entry)
+        return result
+    return []
+
+
 class ToolManager:
     """
     Tool manager for managing tools.
@@ -222,10 +242,35 @@ class ToolManager:
         except Exception as e:
             logger.error(f"Error configuring tools from config: {e}")
 
+    def _load_mcp_configs(self) -> list:
+        """
+        Load MCP server configs with priority:
+          1. ~/cow/mcp.json  (supports both mcpServers and mcp_servers keys)
+          2. config.json mcp_servers field (fallback)
+        """
+        import os
+        import json as _json
+
+        workspace = os.path.expanduser(conf().get("agent_workspace", "~/cow"))
+        mcp_json_path = os.path.join(workspace, "mcp.json")
+
+        if os.path.exists(mcp_json_path):
+            try:
+                with open(mcp_json_path, "r", encoding="utf-8") as f:
+                    data = _json.load(f)
+                raw = data.get("mcpServers") or data.get("mcp_servers") or data
+                logger.info(f"[ToolManager] Loading MCP config from {mcp_json_path}")
+                return _normalize_mcp_configs(raw)
+            except Exception as e:
+                logger.warning(f"[ToolManager] Failed to read {mcp_json_path}: {e}, falling back to config.json")
+
+        raw = conf().get("mcp_servers", [])
+        return _normalize_mcp_configs(raw)
+
     def _load_mcp_tools(self):
         """Load MCP tools from mcp_servers config. Failures are non-fatal."""
         try:
-            mcp_servers_config = conf().get("mcp_servers", [])
+            mcp_servers_config = self._load_mcp_configs()
             if not mcp_servers_config:
                 return
 
