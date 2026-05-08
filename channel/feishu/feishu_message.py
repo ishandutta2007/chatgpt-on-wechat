@@ -144,7 +144,14 @@ class FeishuMessage(ChatMessage):
             file_key = content.get("file_key")
             file_name = content.get("file_name")
 
-            self.content = TmpDir().path() + file_key + "." + utils.get_path_suffix(file_name)
+            # 落到 agent_workspace/tmp 下（绝对路径），与图片处理一致；
+            # 否则相对路径 ./tmp 在 agent 工作区里 read 时会找不到。
+            workspace_root = expand_path(conf().get("agent_workspace", "~/cow"))
+            tmp_dir = os.path.join(workspace_root, "tmp")
+            os.makedirs(tmp_dir, exist_ok=True)
+            self.content = os.path.join(
+                tmp_dir, f"{file_key}.{utils.get_path_suffix(file_name)}"
+            )
 
             def _download_file():
                 # 如果响应状态码是200，则将响应内容写入本地文件
@@ -170,7 +177,11 @@ class FeishuMessage(ChatMessage):
             content = json.loads(msg.get("content"))
             file_key = content.get("file_key")
 
-            self.content = TmpDir().path() + file_key + ".opus"
+            # 落到 agent_workspace/tmp 下（绝对路径），保证语音 STT 流程可读到
+            workspace_root = expand_path(conf().get("agent_workspace", "~/cow"))
+            tmp_dir = os.path.join(workspace_root, "tmp")
+            os.makedirs(tmp_dir, exist_ok=True)
+            self.content = os.path.join(tmp_dir, f"{file_key}.opus")
             logger.info(f"[FeiShu] audio message: file_key={file_key}, save_path={self.content}")
 
             def _download_audio():

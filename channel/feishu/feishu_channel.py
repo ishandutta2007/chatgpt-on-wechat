@@ -542,6 +542,32 @@ class FeiShuChanel(ChatChannel):
             # 单张图片不直接处理，等待用户提问
             return
 
+        # 如果是文件消息，触发实际下载并缓存，等待用户后续提问时一并带上。
+        # 与 wecom_bot 行为对齐：发文件后静默缓存（飞书客户端会显示"已读"），
+        # 用户下一条文本消息会自动 attach 上文件路径给 agent。
+        if feishu_msg.ctype == ContextType.FILE:
+            try:
+                feishu_msg.prepare()
+                # prepare 通过 _prepared 标记保证幂等，重复调用安全
+                if not os.path.exists(feishu_msg.content):
+                    raise FileNotFoundError(feishu_msg.content)
+            except Exception as e:
+                logger.warning(f"[FeiShu] prepare file failed: {e}")
+                # 文件下载失败时主动通知用户，避免静默丢失
+                try:
+                    err_reply = Reply(ReplyType.TEXT, f"⚠️ 文件下载失败，请重新发送：{e}")
+                    self._send(err_reply, self._compose_context(
+                        ContextType.TEXT, "",
+                        isgroup=is_group, msg=feishu_msg,
+                        receive_id_type=receive_id_type, no_need_at=True,
+                    ))
+                except Exception:
+                    pass
+                return
+            file_cache.add(session_id, feishu_msg.content, file_type='file')
+            logger.info(f"[FeiShu] File cached for session {session_id}: {feishu_msg.content}")
+            return
+
         # 如果是文本消息，检查是否有缓存的文件
         if feishu_msg.ctype == ContextType.TEXT:
             cached_files = file_cache.get(session_id)
