@@ -120,6 +120,12 @@
                   "tools/vision",
                   "tools/browser"
                 ]
+              },
+              {
+                "group": "MCP 工具",
+                "pages": [
+                  "tools/mcp"
+                ]
               }
             ]
           },
@@ -307,6 +313,12 @@
                   "en/tools/vision",
                   "en/tools/browser"
                 ]
+              },
+              {
+                "group": "MCP Tools",
+                "pages": [
+                  "en/tools/mcp"
+                ]
               }
             ]
           },
@@ -493,6 +505,12 @@
                   "ja/tools/web-search",
                   "ja/tools/vision",
                   "ja/tools/browser"
+                ]
+              },
+              {
+                "group": "MCP Tool",
+                "pages": [
+                  "ja/tools/mcp"
                 ]
               }
             ]
