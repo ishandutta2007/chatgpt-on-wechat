@@ -274,6 +274,20 @@ def sigterm_handler_wrap(_signo):
     signal.signal(_signo, func)
 
 
+def _warmup_mcp_tools():
+    """
+    Kick off MCP server loading at process startup so subprocesses
+    (npx / uvx etc.) finish initializing before the first user message
+    arrives. Returns immediately — the actual work happens on a daemon
+    thread inside ToolManager. Safe to call when MCP is not configured.
+    """
+    try:
+        from agent.tools import ToolManager
+        ToolManager()._load_mcp_tools()
+    except Exception as e:
+        logger.warning(f"[App] MCP warmup failed (non-fatal): {e}")
+
+
 def _sync_builtin_skills():
     """Sync builtin skills from project skills/ to workspace skills/ on startup."""
     import shutil
@@ -334,6 +348,10 @@ def run():
 
         # Sync builtin skills to workspace before channels start
         _sync_builtin_skills()
+
+        # Kick off MCP server loading in the background so first-message
+        # latency isn't dominated by npx package downloads.
+        _warmup_mcp_tools()
 
         logger.info(f"[App] Starting channels: {channel_names}")
 

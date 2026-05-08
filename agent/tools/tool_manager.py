@@ -1,5 +1,6 @@
 import importlib
 import importlib.util
+import threading
 from pathlib import Path
 from typing import Dict, Any, Type
 from agent.tools.base_tool import BaseTool
@@ -46,9 +47,23 @@ class ToolManager:
         if not hasattr(self, 'tool_classes'):
             self.tool_classes = {}  # Dictionary to store tool classes
         if not hasattr(self, '_mcp_registry'):
-            self._mcp_registry = None  # 懒初始化，有配置时才创建
+            self._mcp_registry = None  # Lazy init: only created when MCP servers are configured
         if not hasattr(self, '_mcp_tool_instances'):
             self._mcp_tool_instances: dict = {}  # tool_name -> McpTool instance
+        if not hasattr(self, '_mcp_lock'):
+            # Guards _mcp_loaded check-then-set so concurrent callers
+            # don't trigger duplicate background loaders.
+            self._mcp_lock = threading.Lock()
+        if not hasattr(self, '_mcp_loaded'):
+            # Idempotency flag. Flipped to True the moment the first loader
+            # is dispatched (synchronously, inside _mcp_lock). Subsequent
+            # _load_mcp_tools() calls become no-ops, so per-session agent
+            # initialization never re-forks MCP subprocesses.
+            self._mcp_loaded = False
+        if not hasattr(self, '_mcp_status'):
+            # server_name -> "pending" / "ready" / "failed"
+            # Useful for UI / introspection while async loading is in progress.
+            self._mcp_status: dict = {}
 
     def load_tools(self, tools_dir: str = "", config_dict=None):
         """
@@ -268,34 +283,109 @@ class ToolManager:
         return _normalize_mcp_configs(raw)
 
     def _load_mcp_tools(self):
-        """Load MCP tools from mcp_servers config. Failures are non-fatal."""
-        try:
+        """
+        Trigger MCP tool loading in a background thread (idempotent).
+
+        Returns immediately. Booting MCP servers (npx, uvx, etc.) takes
+        seconds to tens of seconds on first run, which would otherwise
+        block agent initialization and the user's first message.
+        Built-in tools work fine without MCP, so we let the agent serve
+        traffic right away and let MCP servers come online in the
+        background. Per-session agents read a snapshot of whatever is
+        ready at construction time and gracefully ignore the rest.
+        """
+        with self._mcp_lock:
+            if self._mcp_loaded:
+                return
             mcp_servers_config = self._load_mcp_configs()
             if not mcp_servers_config:
+                # Mark as loaded even when there is nothing to load,
+                # so we don't re-read the config file on every call.
+                self._mcp_loaded = True
                 return
 
-            from agent.tools.mcp.mcp_client import McpClientRegistry
+            # Mark pending immediately so list_mcp_status() callers see
+            # the in-progress state instead of an empty dict.
+            for cfg in mcp_servers_config:
+                name = cfg.get("name", "<unnamed>")
+                self._mcp_status[name] = "pending"
+
+            self._mcp_loaded = True
+            threading.Thread(
+                target=self._load_mcp_tools_async,
+                args=(mcp_servers_config,),
+                daemon=True,
+                name="mcp-loader",
+            ).start()
+            logger.info(
+                f"[ToolManager] MCP loading started in background "
+                f"({len(mcp_servers_config)} server(s) configured)"
+            )
+
+    def _load_mcp_tools_async(self, mcp_servers_config):
+        """
+        Background worker: bring up each MCP server one-by-one and
+        publish ready tools to _mcp_tool_instances as they come online.
+
+        Server failures are isolated — one bad server cannot block
+        the others, and never raises out of the worker thread.
+        """
+        try:
+            from agent.tools.mcp.mcp_client import McpClient, McpClientRegistry
             from agent.tools.mcp.mcp_tool import McpTool
 
-            self._mcp_registry = McpClientRegistry()
-            self._mcp_registry.start_all(mcp_servers_config)
+            registry = McpClientRegistry()
+            self._mcp_registry = registry
 
-            for server_name, client in self._mcp_registry.all_clients().items():
+            for cfg in mcp_servers_config:
+                server_name = cfg.get("name", "<unnamed>")
                 try:
+                    client = McpClient(cfg)
+                    if not client.initialize():
+                        self._mcp_status[server_name] = "failed"
+                        logger.warning(
+                            f"[MCP] Server '{server_name}' failed to initialize — skipping"
+                        )
+                        continue
+
                     tool_schemas = client.list_tools()
+                    added = []
                     for schema in tool_schemas:
                         tool_name = schema.get("name", "")
                         if not tool_name:
                             continue
                         mcp_tool = McpTool(client, schema, server_name)
+                        # Atomic dict assignment is GIL-safe; readers iterate
+                        # over a list() snapshot to avoid concurrent mutation.
                         self._mcp_tool_instances[tool_name] = mcp_tool
-                        logger.debug(f"[ToolManager] Loaded MCP tool: {tool_name} from server '{server_name}'")
-                except Exception as e:
-                    logger.warning(f"[ToolManager] Failed to list tools from MCP server '{server_name}': {e}")
+                        added.append(tool_name)
 
-            logger.info(f"[ToolManager] Loaded {len(self._mcp_tool_instances)} MCP tool(s) in total")
+                    # Register client into the shared registry only after its
+                    # tools are visible, so callers never see a half-loaded server.
+                    with registry._registry_lock:
+                        registry._clients[server_name] = client
+                    self._mcp_status[server_name] = "ready"
+                    logger.info(
+                        f"[MCP] Server '{server_name}' ready — "
+                        f"{len(added)} tool(s): {added}"
+                    )
+                except Exception as e:
+                    self._mcp_status[server_name] = "failed"
+                    logger.warning(f"[MCP] Server '{server_name}' load failed: {e}")
+
+            ready = sum(1 for s in self._mcp_status.values() if s == "ready")
+            total = len(mcp_servers_config)
+            logger.info(
+                f"[ToolManager] MCP loading complete: "
+                f"{ready}/{total} server(s) ready, "
+                f"{len(self._mcp_tool_instances)} tool(s) available"
+            )
         except Exception as e:
-            logger.warning(f"[ToolManager] MCP tool loading failed, skipping: {e}")
+            logger.warning(f"[ToolManager] MCP background loader crashed: {e}")
+
+    def list_mcp_status(self) -> dict:
+        """Return {server_name: status} snapshot for UI / debugging."""
+        return dict(self._mcp_status)
 
     def create_tool(self, name: str) -> BaseTool:
         """
