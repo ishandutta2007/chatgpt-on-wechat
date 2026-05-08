@@ -594,6 +594,15 @@ class AgentStreamExecutor:
         turns = self._identify_complete_turns()
         logger.info(f"Sending {len(messages)} messages ({len(turns)} turns) to LLM")
 
+        # Pull in any MCP tools that finished loading since this turn started.
+        # Cheap dict reconciliation (microseconds) — lets the agent pick up
+        # newly available MCP tools mid-conversation without a session restart.
+        try:
+            from agent.tools import ToolManager
+            ToolManager().sync_mcp_into_agent(self)
+        except Exception as e:
+            logger.debug(f"[Agent] MCP sync skipped: {e}")
+
         # Prepare tool definitions (OpenAI/Claude format)
         tools_schema = None
         if self.tools:

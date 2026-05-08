@@ -462,6 +462,12 @@ class AgentBridge:
                         except Exception as e:
                             logger.warning(f"[AgentBridge] Failed to clear DB after recovery: {e}")
             
+            # Post-message hot-reload: detect edits to ~/cow/mcp.json and
+            # sync any new/removed MCP tools into the live agent in the
+            # background. Off the critical path so user latency is unaffected;
+            # changes take effect on the user's next message.
+            self._schedule_mcp_hot_reload(agent)
+
             # Check if there are files to send (from send/read tool)
             if hasattr(agent, 'stream_executor') and hasattr(agent.stream_executor, 'files_to_send'):
                 files_to_send = agent.stream_executor.files_to_send
@@ -494,6 +500,31 @@ class AgentBridge:
                     logger.warning(f"[AgentBridge] Failed to clear DB after error: {db_err}")
             return Reply(ReplyType.ERROR, f"Agent error: {str(e)}")
     
+    def _schedule_mcp_hot_reload(self, agent):
+        """
+        Fire-and-forget: detect mcp.json edits and reconcile the agent's
+        tool dict in the background. Runs after the user's reply is sent,
+        so any cost (file stat, hash, server boot) never adds to user latency.
+        Failures are isolated and never raise into the message pipeline.
+        """
+        import threading
+        from agent.tools import ToolManager
+
+        def _run():
+            try:
+                tm = ToolManager()
+                tm.refresh_mcp_if_changed()
+                added, removed = tm.sync_mcp_into_agent(agent)
+                if added or removed:
+                    logger.info(
+                        f"[AgentBridge] Agent tools synced — "
+                        f"added={added}, removed={removed}"
+                    )
+            except Exception as e:
+                logger.warning(f"[AgentBridge] MCP hot-reload failed (non-fatal): {e}")
+
+        threading.Thread(target=_run, daemon=True, name="mcp-hot-reload").start()
+
     def _create_file_reply(self, file_info: dict, text_response: str, context: Context = None) -> Reply:
         """
         Create a reply for sending files
