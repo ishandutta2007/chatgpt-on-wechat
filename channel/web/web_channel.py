@@ -535,24 +535,8 @@ class WebChannel(ChatChannel):
         with open(file_path, 'r', encoding='utf-8') as f:
             return f.read()
 
-    def _find_available_port(self, start_port, max_tries=10):
-        """从 start_port 开始向上找第一个可用端口，最多尝试 max_tries 次。"""
-        import socket
-        for port in range(start_port, start_port + max_tries):
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                try:
-                    s.bind(("0.0.0.0", port))
-                    return port
-                except OSError:
-                    continue
-        raise OSError(f"[WebChannel] 无法找到可用端口（尝试范围 {start_port}-{start_port + max_tries - 1}）")
-
     def startup(self):
-        base_port = conf().get("web_port", 9899)
-        port = self._find_available_port(base_port)
-        if port != base_port:
-            logger.info(f"[WebChannel] 端口 {base_port} 已被占用，自动切换到端口 {port}")
+        port = conf().get("web_port", 9899)
 
         # 打印可用渠道类型提示
         logger.info(
@@ -570,8 +554,12 @@ class WebChannel(ChatChannel):
         logger.info(f"[WebChannel] 🌐 本地访问: http://localhost:{port}")
         logger.info(f"[WebChannel] 🌍 服务器访问: http://YOUR_IP:{port} (请将YOUR_IP替换为服务器IP)")
 
-        import webbrowser
-        webbrowser.open(f"http://localhost:{port}")
+        try:
+            import webbrowser
+            webbrowser.open(f"http://localhost:{port}")
+            logger.debug(f"[WebChannel] Opened browser at http://localhost:{port}")
+        except Exception as e:
+            logger.debug(f"[WebChannel] Could not open browser: {e}")
 
         # 确保静态文件目录存在
         static_dir = os.path.join(os.path.dirname(__file__), 'static')
@@ -638,6 +626,13 @@ class WebChannel(ChatChannel):
             server.start()
         except (KeyboardInterrupt, SystemExit):
             server.stop()
+        except OSError as e:
+            if e.errno in (48, 98):  # macOS/Linux EADDRINUSE
+                logger.error(
+                    f"[WebChannel] 端口 {port} 已被占用，可执行 `cow restart` 清理残留进程，"
+                    f"或在 config.json 中修改 web_port"
+                )
+            raise
 
     def stop(self):
         if self._http_server:
