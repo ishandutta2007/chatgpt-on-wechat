@@ -14,12 +14,13 @@ from models.session_manager import SessionManager
 from .qianfan_session import QianfanSession
 
 DEFAULT_API_BASE = "https://qianfan.baidubce.com/v2"
-DEFAULT_MODEL = const.ERNIE_5
+DEFAULT_MODEL = const.ERNIE_5_1
 DEFAULT_VISION_MODEL = const.ERNIE_45_TURBO_VL
 
 # Qianfan models that natively understand images. Other ERNIE variants
 # are text-only and must not receive image payloads.
 _VISION_CAPABLE_MODELS = {
+    const.ERNIE_5_1,
     const.ERNIE_5,
     const.ERNIE_X1_1,
     const.ERNIE_45_TURBO_VL,

@@ -3,7 +3,7 @@ from common.log import logger
 
 
 class QianfanSession(Session):
-    def __init__(self, session_id, system_prompt=None, model="ernie-5.0"):
+    def __init__(self, session_id, system_prompt=None, model="ernie-5.1"):
         super().__init__(session_id, system_prompt)
         self.model = model
         self.reset()

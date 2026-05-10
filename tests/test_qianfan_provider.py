@@ -16,6 +16,8 @@ class TestQianfanConstantsAndRouting(unittest.TestCase):
     def test_ernie_constants_are_in_model_list(self):
         from common import const
 
+        self.assertEqual(const.ERNIE_5_1, "ernie-5.1")
+        self.assertEqual(const.ERNIE_5, "ernie-5.0")
         self.assertEqual(const.ERNIE_45_TURBO_128K, "ernie-4.5-turbo-128k")
         self.assertEqual(const.ERNIE_45_TURBO_32K, "ernie-4.5-turbo-32k")
         self.assertEqual(const.ERNIE_X1_1, "ernie-x1.1")
@@ -28,11 +30,18 @@ class TestQianfanConstantsAndRouting(unittest.TestCase):
             "ernie-4.5-turbo-vl-32k",
         )
         self.assertIn(const.QIANFAN, const.MODEL_LIST)
+        self.assertIn(const.ERNIE_5_1, const.MODEL_LIST)
+        self.assertIn(const.ERNIE_5, const.MODEL_LIST)
         self.assertIn(const.ERNIE_45_TURBO_128K, const.MODEL_LIST)
         self.assertIn(const.ERNIE_45_TURBO_32K, const.MODEL_LIST)
         self.assertIn(const.ERNIE_X1_1, const.MODEL_LIST)
         self.assertIn(const.ERNIE_45_TURBO_VL, const.MODEL_LIST)
         self.assertIn(const.ERNIE_45_TURBO_VL_32K, const.MODEL_LIST)
+        # ERNIE 5.1 must be ranked before 5.0 so it is presented as the default.
+        self.assertLess(
+            const.MODEL_LIST.index(const.ERNIE_5_1),
+            const.MODEL_LIST.index(const.ERNIE_5),
+        )
 
     def test_qianfan_config_keys_are_available(self):
         import config
@@ -112,7 +121,7 @@ class TestQianfanConstantsAndRouting(unittest.TestCase):
 class TestQianfanBot(unittest.TestCase):
     def _fake_conf(self, values=None):
         data = {
-            "model": "ernie-5.0",
+            "model": "ernie-5.1",
             "qianfan_api_key": "test-qianfan-key",
             "qianfan_api_base": "https://qianfan.baidubce.com/v2",
             "temperature": 0.7,
@@ -150,7 +159,7 @@ class TestQianfanBot(unittest.TestCase):
 
                 bot = QianfanBot()
 
-        self.assertEqual(bot.args["model"], "ernie-5.0")
+        self.assertEqual(bot.args["model"], "ernie-5.1")
 
     def test_reply_text_posts_openai_compatible_payload(self):
         fake_conf = self._fake_conf()
@@ -179,7 +188,7 @@ class TestQianfanBot(unittest.TestCase):
         kwargs = post.call_args.kwargs
         self.assertEqual(url, "https://qianfan.baidubce.com/v2/chat/completions")
         self.assertEqual(kwargs["headers"]["Authorization"], "Bearer test-qianfan-key")
-        self.assertEqual(kwargs["json"]["model"], "ernie-5.0")
+        self.assertEqual(kwargs["json"]["model"], "ernie-5.1")
         self.assertEqual(kwargs["json"]["messages"], [{"role": "user", "content": "你好"}])
 
     def test_reply_text_returns_auth_error_for_401(self):
@@ -224,7 +233,7 @@ class TestQianfanBot(unittest.TestCase):
         post.assert_called_once()
 
     def test_qianfan_bot_supports_vision_for_multimodal_models(self):
-        for model in ("ernie-5.0", "ernie-x1.1", "ernie-4.5-turbo-vl", "ernie-4.5-turbo-vl-32k"):
+        for model in ("ernie-5.1", "ernie-5.0", "ernie-x1.1", "ernie-4.5-turbo-vl", "ernie-4.5-turbo-vl-32k"):
             fake_conf = self._fake_conf({"model": model})
             with patch("models.qianfan.qianfan_bot.conf", return_value=fake_conf):
                 with patch("models.qianfan.qianfan_bot.SessionManager"):
@@ -581,7 +590,7 @@ class TestQianfanDocs(unittest.TestCase):
     def test_readme_documents_native_qianfan_provider(self):
         text = self._read("README.md")
 
-        self.assertIn('"model": "ernie-5.0"', text)
+        self.assertIn('"model": "ernie-5.1"', text)
         self.assertIn('"qianfan_api_key": ""', text)
         self.assertIn('"qianfan_api_base": "https://qianfan.baidubce.com/v2"', text)
 
