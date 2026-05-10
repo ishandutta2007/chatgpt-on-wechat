@@ -360,6 +360,8 @@ def run():
 
         while True:
             time.sleep(1)
+    except KeyboardInterrupt:
+        pass
     except Exception as e:
         logger.error("App startup failed!")
         logger.exception(e)
