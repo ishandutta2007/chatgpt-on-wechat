@@ -606,6 +606,14 @@
 }
 .tool-error-text { color: #f87171; }
 
+/* Log level highlighting */
+.log-line { display: block; }
+.log-line-debug    { color: #94a3b8; }
+.log-line-info     { background-color: rgba(59, 130, 246, 0.08); }
+.log-line-warning  { background-color: rgba(234, 179, 8, 0.15); color: #fde68a; }
+.log-line-error    { background-color: rgba(239, 68, 68, 0.15); color: #fca5a5; }
+.log-line-critical { background-color: rgba(239, 68, 68, 0.35); color: #ffffff; font-weight: bold; }
+
 /* Tool failed state */
 .agent-tool-step.tool-failed .tool-name { color: #f87171; }
 
