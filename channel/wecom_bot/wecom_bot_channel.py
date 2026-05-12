@@ -34,6 +34,50 @@ HEARTBEAT_INTERVAL = 30
 MEDIA_CHUNK_SIZE = 512 * 1024  # 512KB per chunk (before base64 encoding)
 
 
+def _escape_control_chars_inside_json_strings(s: str) -> str:
+    """Escape U+0000–U+001F inside JSON string values so json.loads accepts WeCom payloads.
+
+    The server occasionally emits raw newlines/tabs inside quoted fields, which is
+    invalid strict JSON but recoverable without touching escapes like \\n or \\".
+    """
+    out = []
+    in_string = False
+    escape = False
+    for c in s:
+        if escape:
+            out.append(c)
+            escape = False
+            continue
+        if in_string and c == "\\":
+            out.append(c)
+            escape = True
+            continue
+        if c == '"':
+            out.append(c)
+            in_string = not in_string
+            continue
+        if in_string and ord(c) < 32:
+            out.append("\\u%04x" % ord(c))
+            continue
+        out.append(c)
+    return "".join(out)
+
+
+def _loads_wecom_ws_json(raw):
+    """Parse WebSocket JSON; tolerate unescaped control characters inside strings."""
+    if isinstance(raw, bytes):
+        raw = raw.decode("utf-8", errors="replace")
+    if not isinstance(raw, str):
+        raw = str(raw)
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as e:
+        msg = str(e).lower()
+        if "control character" in msg:
+            return json.loads(_escape_control_chars_inside_json_strings(raw))
+        raise
+
+
 @singleton
 class WecomBotChannel(ChatChannel):
 
@@ -93,7 +137,7 @@ class WecomBotChannel(ChatChannel):
 
         def _on_message(ws, raw):
             try:
-                data = json.loads(raw)
+                data = _loads_wecom_ws_json(raw)
                 self._handle_ws_message(data)
             except Exception as e:
                 logger.error(f"[WecomBot] Failed to handle ws message: {e}", exc_info=True)
