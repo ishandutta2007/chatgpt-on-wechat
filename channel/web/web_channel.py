@@ -554,6 +554,13 @@ class WebChannel(ChatChannel):
         logger.info(f"[WebChannel] 🌐 本地访问: http://localhost:{port}")
         logger.info(f"[WebChannel] 🌍 服务器访问: http://YOUR_IP:{port} (请将YOUR_IP替换为服务器IP)")
 
+        try:
+            import webbrowser
+            webbrowser.open(f"http://localhost:{port}")
+            logger.debug(f"[WebChannel] Opened browser at http://localhost:{port}")
+        except Exception as e:
+            logger.debug(f"[WebChannel] Could not open browser: {e}")
+
         # 确保静态文件目录存在
         static_dir = os.path.join(os.path.dirname(__file__), 'static')
         if not os.path.exists(static_dir):
@@ -619,6 +626,13 @@ class WebChannel(ChatChannel):
             server.start()
         except (KeyboardInterrupt, SystemExit):
             server.stop()
+        except OSError as e:
+            if e.errno in (48, 98):  # macOS/Linux EADDRINUSE
+                logger.error(
+                    f"[WebChannel] 端口 {port} 已被占用，可执行 `cow restart` 清理残留进程，"
+                    f"或在 config.json 中修改 web_port"
+                )
+            raise
 
     def stop(self):
         if self._http_server:
