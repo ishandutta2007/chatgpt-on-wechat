@@ -245,16 +245,11 @@ class Read(BaseTool):
                 })
             
             # Read file (utf-8-sig strips BOM automatically on Windows)
+            # Note: Truncation is unified via truncate_head (DEFAULT_MAX_LINES / DEFAULT_MAX_BYTES)
+            # so that offset/limit can paginate the entire file correctly.
             with open(absolute_path, 'r', encoding='utf-8-sig') as f:
                 content = f.read()
-            
-            # Truncate content if too long (20K characters max for model context)
-            MAX_CONTENT_CHARS = 20 * 1024  # 20K characters
-            content_truncated = False
-            if len(content) > MAX_CONTENT_CHARS:
-                content = content[:MAX_CONTENT_CHARS]
-                content_truncated = True
-            
+
             all_lines = content.split('\n')
             total_file_lines = len(all_lines)
             
@@ -290,11 +285,7 @@ class Read(BaseTool):
             
             output_text = ""
             details = {}
-            
-            # Add truncation warning if content was truncated
-            if content_truncated:
-                output_text = f"[文件内容已截断到前 {format_size(MAX_CONTENT_CHARS)}，完整文件大小: {format_size(file_size)}]\n\n"
-            
+
             if truncation.first_line_exceeds_limit:
                 # First line exceeds 30KB limit
                 first_line_size = format_size(len(all_lines[start_line].encode('utf-8')))
