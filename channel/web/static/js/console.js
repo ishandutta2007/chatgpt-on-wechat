@@ -105,6 +105,7 @@ const I18N = {
         tip_new_chat: '新建对话',
         tip_clear_context: '清除上下文',
         tip_attach_file: '上传附件',
+        tip_attach_folder: '上传目录',
         confirm_yes: '确认',
         confirm_cancel: '取消',
         error_send: '发送失败，请稍后再试。', error_timeout: '请求超时，请再试一次。',
@@ -204,6 +205,7 @@ const I18N = {
         tip_new_chat: 'New Chat',
         tip_clear_context: 'Clear Context',
         tip_attach_file: 'Attach File',
+        tip_attach_folder: 'Attach Folder',
         confirm_yes: 'Confirm',
         confirm_cancel: 'Cancel',
         error_send: 'Failed to send. Please try again.', error_timeout: 'Request timeout. Please try again.',
@@ -578,6 +580,15 @@ const chatInput = document.getElementById('chat-input');
 const sendBtn = document.getElementById('send-btn');
 const messagesDiv = document.getElementById('chat-messages');
 const fileInput = document.getElementById('file-input');
+const folderInput = document.getElementById('folder-input');
+const attachFolderBtn = document.getElementById('attach-folder-btn');
+
+if (folderInput && attachFolderBtn) {
+    const supportsDirectoryUpload = 'webkitdirectory' in folderInput;
+    if (!supportsDirectoryUpload) {
+        attachFolderBtn.classList.add('hidden');
+    }
+}
 
 // Smart auto-scroll: pause when user scrolls up, resume when near bottom
 let _autoScrollEnabled = true;
@@ -644,9 +655,12 @@ function renderAttachmentPreview() {
     attachmentPreview.classList.remove('hidden');
     attachmentPreview.innerHTML = pendingAttachments.map((att, idx) => {
         if (att._uploading) {
+            const suffix = att.file_type === 'directory' && att.file_count
+                ? ` (${att.file_count})`
+                : '';
             return `<div class="att-chip att-uploading" data-idx="${idx}">
                 <i class="fas fa-spinner fa-spin"></i>
-                <span class="att-name">${escapeHtml(att.file_name)}</span>
+                <span class="att-name">${escapeHtml(att.file_name)}${suffix}</span>
             </div>`;
         }
         if (att.file_type === 'image') {
@@ -655,10 +669,15 @@ function renderAttachmentPreview() {
                 <button class="att-remove" onclick="removeAttachment(${idx})">&times;</button>
             </div>`;
         }
-        const icon = att.file_type === 'video' ? 'fa-film' : 'fa-file-alt';
+        const icon = att.file_type === 'video'
+            ? 'fa-film'
+            : (att.file_type === 'directory' ? 'fa-folder-tree' : 'fa-file-alt');
+        const suffix = att.file_type === 'directory' && att.file_count
+            ? ` (${att.file_count})`
+            : '';
         return `<div class="att-chip" data-idx="${idx}">
             <i class="fas ${icon}"></i>
-            <span class="att-name">${escapeHtml(att.file_name)}</span>
+            <span class="att-name">${escapeHtml(att.file_name)}${suffix}</span>
             <button class="att-remove" onclick="removeAttachment(${idx})">&times;</button>
         </div>`;
     }).join('');
@@ -709,8 +728,89 @@ async function handleFileSelect(files) {
     await Promise.all(tasks);
 }
 
+function _makeUploadId() {
+    return `dir_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function _groupDirectoryFiles(files) {
+    const groups = new Map();
+    for (const file of Array.from(files || [])) {
+        const relPath = file.webkitRelativePath || file.name;
+        const parts = relPath.split('/').filter(Boolean);
+        const rootName = parts[0] || file.name;
+        if (!groups.has(rootName)) groups.set(rootName, []);
+        groups.get(rootName).push({ file, relPath });
+    }
+    return groups;
+}
+
+async function handleFolderSelect(files) {
+    if (!files || files.length === 0) return;
+    const groups = _groupDirectoryFiles(files);
+    const groupTasks = [];
+
+    for (const [rootName, entries] of groups.entries()) {
+        const placeholder = {
+            file_name: rootName,
+            file_type: 'directory',
+            file_count: entries.length,
+            _uploading: true,
+        };
+        pendingAttachments.push(placeholder);
+        renderAttachmentPreview();
+
+        const uploadId = _makeUploadId();
+        const tasks = entries.map(async ({ file, relPath }) => {
+            uploadingCount++;
+            renderAttachmentPreview();
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('session_id', sessionId);
+                formData.append('upload_id', uploadId);
+                formData.append('relative_path', relPath);
+
+                const resp = await fetch('/upload', { method: 'POST', body: formData });
+                const data = await resp.json();
+                if (data.status !== 'success') {
+                    throw new Error(data.message || 'Upload failed');
+                }
+                if (!placeholder.file_path && data.root_path) {
+                    placeholder.file_path = data.root_path;
+                    placeholder.file_name = data.root_name || rootName;
+                }
+            } finally {
+                uploadingCount--;
+                renderAttachmentPreview();
+            }
+        });
+
+        groupTasks.push((async () => {
+            try {
+                await Promise.all(tasks);
+                if (!placeholder.file_path) {
+                    throw new Error('Directory root path missing');
+                }
+                delete placeholder._uploading;
+            } catch (e) {
+                console.error('Directory upload failed:', e);
+                const i = pendingAttachments.indexOf(placeholder);
+                if (i !== -1) pendingAttachments.splice(i, 1);
+            }
+            renderAttachmentPreview();
+        })());
+    }
+
+    await Promise.all(groupTasks);
+}
+
 fileInput.addEventListener('change', function() {
     handleFileSelect(this.files);
+    this.value = '';
+});
+
+folderInput.addEventListener('change', function() {
+    handleFolderSelect(this.files);
     this.value = '';
 });
 
@@ -1037,6 +1137,7 @@ function sendMessage() {
             file_path: a.file_path,
             file_name: a.file_name,
             file_type: a.file_type,
+            file_count: a.file_count,
         }));
     }
 
@@ -1448,8 +1549,13 @@ function createUserMessageEl(content, timestamp, attachments) {
             if (a.file_type === 'image') {
                 return `<img src="${a.preview_url}" alt="${escapeHtml(a.file_name)}" class="user-msg-image">`;
             }
-            const icon = a.file_type === 'video' ? 'fa-film' : 'fa-file-alt';
-            return `<div class="user-msg-file"><i class="fas ${icon}"></i> ${escapeHtml(a.file_name)}</div>`;
+            const icon = a.file_type === 'video'
+                ? 'fa-film'
+                : (a.file_type === 'directory' ? 'fa-folder-tree' : 'fa-file-alt');
+            const suffix = a.file_type === 'directory' && a.file_count
+                ? ` (${a.file_count})`
+                : '';
+            return `<div class="user-msg-file"><i class="fas ${icon}"></i> ${escapeHtml(a.file_name)}${suffix}</div>`;
         }).join('');
         attachHtml = `<div class="user-msg-attachments">${items}</div>`;
     }
@@ -1980,6 +2086,7 @@ function _applyInputTooltips() {
     set('new-chat-btn', 'tip_new_chat');
     set('clear-context-btn', 'tip_clear_context');
     set('attach-btn', 'tip_attach_file');
+    set('attach-folder-btn', 'tip_attach_folder');
     set('session-toggle-btn', 'session_history', 'bottom');
 }
 

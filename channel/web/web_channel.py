@@ -90,6 +90,45 @@ def _get_upload_dir() -> str:
     return tmp_dir
 
 
+def _sanitize_upload_relative_path(relative_path: str) -> str:
+    """Normalize relative upload path and reject escapes / absolute paths."""
+    relative_path = (relative_path or "").replace("\\", "/").strip("/")
+    if not relative_path:
+        raise ValueError("Empty relative path")
+    norm_path = os.path.normpath(relative_path)
+    if norm_path in (".", "") or norm_path.startswith("..") or os.path.isabs(norm_path):
+        raise ValueError("Invalid relative path")
+    return norm_path
+
+
+def _sanitize_upload_id(upload_id: str) -> str:
+    """Allow only simple batch ids for directory uploads."""
+    sanitized = "".join(ch for ch in (upload_id or "") if ch.isalnum() or ch in ("-", "_"))
+    if not sanitized:
+        raise ValueError("Invalid upload id")
+    return sanitized[:80]
+
+
+def _read_uploaded_file_bytes(file_obj) -> bytes:
+    """Return uploaded content as bytes across web.py upload object variants."""
+    content = None
+
+    if hasattr(file_obj, "file") and hasattr(file_obj.file, "read"):
+        content = file_obj.file.read()
+    elif hasattr(file_obj, "read"):
+        content = file_obj.read()
+    elif hasattr(file_obj, "value"):
+        content = file_obj.value
+
+    if content is None:
+        raise ValueError("Unable to read uploaded file content")
+    if isinstance(content, bytes):
+        return content
+    if isinstance(content, str):
+        return content.encode("utf-8")
+    raise TypeError(f"Unsupported uploaded content type: {type(content).__name__}")
+
+
 def _generate_session_title(user_message: str, assistant_reply: str = "") -> str:
     """Delegate to the shared SessionService implementation."""
     from agent.chat.session_service import generate_session_title
@@ -343,24 +382,47 @@ class WebChannel(ChatChannel):
         return on_event
 
     def upload_file(self):
-        """Handle file upload via multipart/form-data. Save to workspace/tmp/ and return metadata."""
+        """Handle file or directory upload via multipart/form-data."""
         try:
-            params = web.input(file={}, session_id="")
+            params = web.input(file={}, session_id="", relative_path="", upload_id="")
             file_obj = params.get("file")
             session_id = params.get("session_id", "")
+            relative_path = params.get("relative_path", "")
+            upload_id = params.get("upload_id", "")
             if file_obj is None or not hasattr(file_obj, "filename") or not file_obj.filename:
                 return json.dumps({"status": "error", "message": "No file uploaded"})
 
             upload_dir = _get_upload_dir()
 
             original_name = file_obj.filename
-            ext = os.path.splitext(original_name)[1].lower()
-            safe_name = f"web_{uuid.uuid4().hex[:8]}{ext}"
-            save_path = os.path.join(upload_dir, safe_name)
+            root_path = ""
 
+            if relative_path:
+                if not upload_id:
+                    return json.dumps({"status": "error", "message": "Missing upload_id for directory upload"})
+                safe_upload_id = _sanitize_upload_id(upload_id)
+                safe_rel_path = _sanitize_upload_relative_path(relative_path)
+                upload_root = os.path.join(upload_dir, f"webdir_{safe_upload_id}")
+                save_path = os.path.normpath(os.path.join(upload_root, safe_rel_path))
+                if not os.path.abspath(save_path).startswith(os.path.abspath(upload_root) + os.sep):
+                    return json.dumps({"status": "error", "message": "Invalid directory upload path"})
+                os.makedirs(os.path.dirname(save_path), exist_ok=True)
+                root_name = safe_rel_path.split(os.sep, 1)[0]
+                root_path = os.path.join(upload_root, root_name)
+                public_path = os.path.relpath(save_path, upload_dir).replace(os.sep, "/")
+                display_name = root_name
+            else:
+                ext = os.path.splitext(original_name)[1].lower()
+                safe_name = f"web_{uuid.uuid4().hex[:8]}{ext}"
+                save_path = os.path.join(upload_dir, safe_name)
+                public_path = safe_name
+                display_name = original_name
+
+            content_bytes = _read_uploaded_file_bytes(file_obj)
             with open(save_path, "wb") as f:
-                f.write(file_obj.read() if hasattr(file_obj, "read") else file_obj.value)
+                f.write(content_bytes)
 
+            ext = os.path.splitext(original_name)[1].lower()
             if ext in IMAGE_EXTENSIONS:
                 file_type = "image"
             elif ext in VIDEO_EXTENSIONS:
@@ -368,17 +430,26 @@ class WebChannel(ChatChannel):
             else:
                 file_type = "file"
 
-            preview_url = f"/uploads/{safe_name}"
+            from urllib.parse import quote
+            preview_url = f"/uploads/{quote(public_path, safe='/')}"
 
             logger.info(f"[WebChannel] File uploaded: {original_name} -> {save_path} ({file_type})")
 
-            return json.dumps({
+            resp = {
                 "status": "success",
                 "file_path": save_path,
-                "file_name": original_name,
+                "file_name": display_name,
                 "file_type": file_type,
                 "preview_url": preview_url,
-            }, ensure_ascii=False)
+            }
+            if root_path:
+                resp.update({
+                    "root_path": root_path,
+                    "root_name": display_name,
+                    "relative_path": relative_path,
+                    "upload_type": "directory",
+                })
+            return json.dumps(resp, ensure_ascii=False)
 
         except Exception as e:
             logger.error(f"[WebChannel] File upload error: {e}", exc_info=True)
@@ -410,6 +481,8 @@ class WebChannel(ChatChannel):
                         file_refs.append(f"[图片: {fpath}]")
                     elif ftype == "video":
                         file_refs.append(f"[视频: {fpath}]")
+                    elif ftype == "directory":
+                        file_refs.append(f"[目录: {fpath}]")
                     else:
                         file_refs.append(f"[文件: {fpath}]")
                 if file_refs:
