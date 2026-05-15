@@ -42,6 +42,24 @@ Controlled by the global `enable_thinking` setting:
 - `true`: thinking is on across all channels. The Web console renders the reasoning trace; IM channels (WeChat / WeCom / DingTalk / Feishu) don't render it but still benefit from higher answer quality.
 - `false`: thinking off, faster responses with lower first-token latency.
 
+### Reasoning Effort
+
+Under thinking mode, `reasoning_effort` controls how hard the model thinks:
+
+```json
+{
+  "enable_thinking": true,
+  "reasoning_effort": "high"
+}
+```
+
+| Value | Use Case |
+| --- | --- |
+| `high` (default) | Day-to-day agent tasks; balanced thinking depth and latency |
+| `max` | Complex coding, long-horizon planning, strict-constraint tasks. Deeper reasoning at the cost of more output tokens and higher latency |
+
+`reasoning_effort` only takes effect when `enable_thinking` is `true`. It is silently ignored on models that do not support thinking mode.
+
 ### Notes
 
 - **Sampling parameters**: under thinking mode, `temperature`, `top_p`, `presence_penalty`, and `frequency_penalty` are silently ignored by the server (no error). CowAgent skips sending them automatically.

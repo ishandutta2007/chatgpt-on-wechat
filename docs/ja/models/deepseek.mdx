@@ -42,6 +42,24 @@ V4シリーズ（`deepseek-v4-flash` / `deepseek-v4-pro`）は明示的な「思
 - `true`：すべてのチャネルで思考モードがオン。Webコンソールでは思考過程を表示し、IMチャネル（WeChat / WeCom / DingTalk / Feishu）では表示されないものの、回答品質の向上というメリットを得られます。
 - `false`：思考オフ、応答が速く、初回トークンの遅延も低くなります。
 
+### 推論強度
+
+思考モード下では `reasoning_effort` で推論の深さを制御できます：
+
+```json
+{
+  "enable_thinking": true,
+  "reasoning_effort": "high"
+}
+```
+
+| 値 | 適用シーン |
+| --- | --- |
+| `high`（デフォルト） | 通常の Agent タスク、思考の深さとレスポンス速度のバランス |
+| `max` | 複雑なコーディング、長いプランニング、厳密な制約のあるタスク。より深い推論と引き換えに出力トークンとレイテンシが増加 |
+
+`reasoning_effort` は `enable_thinking` が `true` の場合のみ有効になります。思考モードをサポートしないモデルでは自動的に無視されます。
+
 ### 注意事項
 
 - **サンプリングパラメータ**：思考モード時は `temperature`、`top_p`、`presence_penalty`、`frequency_penalty` がサーバ側で無視されます（エラーにはなりません）。CowAgentは自動的に送信をスキップします。
