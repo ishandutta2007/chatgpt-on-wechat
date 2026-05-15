@@ -398,12 +398,24 @@
                                     <button id="attach-btn" class="w-9 h-10 flex items-center justify-center rounded-lg
                                                                    text-slate-400 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-900/20
                                                                    cursor-pointer transition-colors duration-150"
-                                            onclick="document.getElementById('file-input').click()">
+                                            type="button"
+                                            onclick="toggleAttachMenu(event)">
                                         <i class="fas fa-paperclip text-base"></i>
                                     </button>
                                 </div>
                                 <input type="file" id="file-input" class="hidden" multiple
                                        accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.json,.xml,.zip,.rar,.7z,.py,.js,.ts,.java,.c,.cpp,.go,.rs,.md">
+                                <input type="file" id="folder-input" class="hidden" multiple webkitdirectory directory>
+                                <div id="attach-menu" class="attach-menu hidden">
+                                    <button id="attach-file-option" type="button" class="attach-menu-item" onclick="triggerFileUpload()">
+                                        <i class="fas fa-file-arrow-up"></i>
+                                        <span data-i18n="attach_menu_file">上传文件</span>
+                                    </button>
+                                    <button id="attach-folder-option" type="button" class="attach-menu-item" onclick="triggerFolderUpload()">
+                                        <i class="fas fa-folder-plus"></i>
+                                        <span data-i18n="attach_menu_folder">上传文件夹</span>
+                                    </button>
+                                </div>
                                 <div id="slash-menu" class="slash-menu hidden"></div>
                                 <textarea id="chat-input"
                                           class="flex-1 min-w-0 px-4 py-[10px] rounded-xl border border-slate-200 dark:border-slate-600
@@ -972,7 +984,6 @@
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
-    <script src="assets/js/console.js"></script>
+    <script defer src="assets/js/console.js"></script>
 </body>
 </html>
