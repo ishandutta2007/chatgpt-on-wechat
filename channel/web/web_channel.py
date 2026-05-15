@@ -9,6 +9,7 @@ import threading
 import time
 import uuid
 from queue import Queue, Empty
+from typing import Tuple
 
 import web
 
@@ -95,8 +96,17 @@ def _sanitize_upload_relative_path(relative_path: str) -> str:
     relative_path = (relative_path or "").replace("\\", "/").strip("/")
     if not relative_path:
         raise ValueError("Empty relative path")
-    norm_path = os.path.normpath(relative_path)
-    if norm_path in (".", "") or norm_path.startswith("..") or os.path.isabs(norm_path):
+    parts = []
+    for part in relative_path.split("/"):
+        if part in ("", "."):
+            continue
+        if part == "..":
+            raise ValueError("Invalid relative path")
+        parts.append(part)
+    if not parts:
+        raise ValueError("Invalid relative path")
+    norm_path = "/".join(parts)
+    if os.path.isabs(norm_path):
         raise ValueError("Invalid relative path")
     return norm_path
 
@@ -109,8 +119,30 @@ def _sanitize_upload_id(upload_id: str) -> str:
     return sanitized[:80]
 
 
+def _is_within_directory(root_path: str, target_path: str) -> bool:
+    try:
+        return os.path.commonpath([root_path, target_path]) == root_path
+    except ValueError:
+        return False
+
+
+def _resolve_upload_path(upload_root: str, relative_path: str) -> Tuple[str, str]:
+    """Resolve a relative upload path under upload_root and reject escapes."""
+    safe_rel_path = _sanitize_upload_relative_path(relative_path)
+    upload_root_real = os.path.realpath(upload_root)
+    save_path = os.path.realpath(os.path.join(upload_root_real, *safe_rel_path.split("/")))
+    if not _is_within_directory(upload_root_real, save_path):
+        raise ValueError("Invalid directory upload path")
+    return safe_rel_path, save_path
+
+
 def _read_uploaded_file_bytes(file_obj) -> bytes:
     """Return uploaded content as bytes across web.py upload object variants."""
+    if isinstance(file_obj, bytes):
+        return file_obj
+    if isinstance(file_obj, str):
+        return file_obj.encode("utf-8")
+
     content = None
 
     if hasattr(file_obj, "file") and hasattr(file_obj.file, "read"):
@@ -127,6 +159,25 @@ def _read_uploaded_file_bytes(file_obj) -> bytes:
     if isinstance(content, str):
         return content.encode("utf-8")
     raise TypeError(f"Unsupported uploaded content type: {type(content).__name__}")
+
+
+def _raw_web_input():
+    """Return unprocessed multipart form data when web.py exposes rawinput."""
+    rawinput = getattr(getattr(web, "webapi", None), "rawinput", None)
+    if not callable(rawinput):
+        raise RuntimeError("web.py rawinput is not available")
+    try:
+        return rawinput(method="post")
+    except TypeError:
+        return rawinput()
+
+
+def _ensure_list(value):
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    return [value]
 
 
 def _generate_session_title(user_message: str, assistant_reply: str = "") -> str:
@@ -384,45 +435,89 @@ class WebChannel(ChatChannel):
     def upload_file(self):
         """Handle file or directory upload via multipart/form-data."""
         try:
-            params = web.input(file={}, session_id="", relative_path="", upload_id="")
+            params = _raw_web_input()
             file_obj = params.get("file")
+            file_objs = params.get("files")
             session_id = params.get("session_id", "")
             relative_path = params.get("relative_path", "")
+            relative_paths = params.get("relative_paths")
             upload_id = params.get("upload_id", "")
+
+            directory_files = _ensure_list(file_objs)
+
+            if not directory_files and file_obj and relative_path:
+                directory_files = [file_obj]
+
+            directory_rel_paths = _ensure_list(relative_paths)
+
+            if not directory_rel_paths and relative_path:
+                directory_rel_paths = [relative_path]
+
+            is_directory_upload = bool(directory_files or directory_rel_paths or relative_path or upload_id)
+
+            upload_dir = _get_upload_dir()
+            if is_directory_upload:
+                if not upload_id:
+                    return json.dumps({"status": "error", "message": "Missing upload_id for directory upload"})
+                if not directory_files:
+                    return json.dumps({"status": "error", "message": "No files uploaded"})
+                if len(directory_files) != len(directory_rel_paths):
+                    return json.dumps({"status": "error", "message": "Directory upload payload mismatch"})
+
+                safe_upload_id = _sanitize_upload_id(upload_id)
+                upload_root = os.path.join(upload_dir, f"webdir_{safe_upload_id}")
+                upload_root_real = os.path.realpath(upload_root)
+
+                root_name = None
+                saved_files = 0
+                for file_obj, rel_path in zip(directory_files, directory_rel_paths):
+                    if file_obj is None:
+                        raise ValueError("Invalid uploaded file")
+                    safe_rel_path, save_path = _resolve_upload_path(upload_root_real, rel_path)
+                    current_root_name = safe_rel_path.split("/", 1)[0]
+                    if root_name is None:
+                        root_name = current_root_name
+                    elif root_name != current_root_name:
+                        raise ValueError("Directory upload must use a single root folder")
+                    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+                    content_bytes = _read_uploaded_file_bytes(file_obj)
+                    with open(save_path, "wb") as f:
+                        f.write(content_bytes)
+                    saved_files += 1
+
+                if not root_name:
+                    raise ValueError("Directory root path missing")
+
+                root_path = os.path.realpath(os.path.join(upload_root_real, root_name))
+                if not _is_within_directory(upload_root_real, root_path):
+                    raise ValueError("Invalid directory upload path")
+
+                logger.info(f"[WebChannel] Directory uploaded: {root_name} -> {root_path} ({saved_files} files)")
+                return json.dumps({
+                    "status": "success",
+                    "file_path": root_path,
+                    "file_name": root_name,
+                    "file_type": "directory",
+                    "file_count": saved_files,
+                    "root_path": root_path,
+                    "root_name": root_name,
+                    "upload_type": "directory",
+                }, ensure_ascii=False)
+
             if file_obj is None or not hasattr(file_obj, "filename") or not file_obj.filename:
                 return json.dumps({"status": "error", "message": "No file uploaded"})
 
-            upload_dir = _get_upload_dir()
-
             original_name = file_obj.filename
-            root_path = ""
-
-            if relative_path:
-                if not upload_id:
-                    return json.dumps({"status": "error", "message": "Missing upload_id for directory upload"})
-                safe_upload_id = _sanitize_upload_id(upload_id)
-                safe_rel_path = _sanitize_upload_relative_path(relative_path)
-                upload_root = os.path.join(upload_dir, f"webdir_{safe_upload_id}")
-                save_path = os.path.normpath(os.path.join(upload_root, safe_rel_path))
-                if not os.path.abspath(save_path).startswith(os.path.abspath(upload_root) + os.sep):
-                    return json.dumps({"status": "error", "message": "Invalid directory upload path"})
-                os.makedirs(os.path.dirname(save_path), exist_ok=True)
-                root_name = safe_rel_path.split(os.sep, 1)[0]
-                root_path = os.path.join(upload_root, root_name)
-                public_path = os.path.relpath(save_path, upload_dir).replace(os.sep, "/")
-                display_name = root_name
-            else:
-                ext = os.path.splitext(original_name)[1].lower()
-                safe_name = f"web_{uuid.uuid4().hex[:8]}{ext}"
-                save_path = os.path.join(upload_dir, safe_name)
-                public_path = safe_name
-                display_name = original_name
+            ext = os.path.splitext(original_name)[1].lower()
+            safe_name = f"web_{uuid.uuid4().hex[:8]}{ext}"
+            save_path = os.path.join(upload_dir, safe_name)
+            public_path = safe_name
+            display_name = original_name
 
             content_bytes = _read_uploaded_file_bytes(file_obj)
             with open(save_path, "wb") as f:
                 f.write(content_bytes)
 
-            ext = os.path.splitext(original_name)[1].lower()
             if ext in IMAGE_EXTENSIONS:
                 file_type = "image"
             elif ext in VIDEO_EXTENSIONS:
@@ -435,21 +530,13 @@ class WebChannel(ChatChannel):
 
             logger.info(f"[WebChannel] File uploaded: {original_name} -> {save_path} ({file_type})")
 
-            resp = {
+            return json.dumps({
                 "status": "success",
                 "file_path": save_path,
                 "file_name": display_name,
                 "file_type": file_type,
                 "preview_url": preview_url,
-            }
-            if root_path:
-                resp.update({
-                    "root_path": root_path,
-                    "root_name": display_name,
-                    "relative_path": relative_path,
-                    "upload_type": "directory",
-                })
-            return json.dumps(resp, ensure_ascii=False)
+            }, ensure_ascii=False)
 
         except Exception as e:
             logger.error(f"[WebChannel] File upload error: {e}", exc_info=True)
