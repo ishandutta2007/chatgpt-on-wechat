@@ -214,24 +214,10 @@ available_setting = {
     "agent_max_context_turns": 20,  # Agent模式下最大上下文记忆轮次
     "agent_max_steps": 20,  # Agent模式下单次运行最大决策步数
     "enable_thinking": False,  # Enable deep-thinking mode for thinking-capable models
+    "reasoning_effort": "high",  # Reasoning depth under thinking mode: "high" or "max"
     "knowledge": True,  # 是否开启知识库功能
-    # Per-skill runtime config. Nested keys are flattened to env vars at startup
-    # using the rule: skill[<name>][<key>] -> SKILL_<NAME>_<KEY>
-    # (e.g. skill["image-generation"].model -> SKILL_IMAGE_GENERATION_MODEL).
-    "skill": {},
-    # MCP (Model Context Protocol) server list.
-    # Each entry describes one MCP server to connect at startup.
-    # Supported types:
-    #   stdio — launch a local process and communicate over stdin/stdout
-    #   sse   — connect to a remote server via HTTP + Server-Sent Events
-    #
-    # Example:
-    #   "mcp_servers": [
-    #     {"name": "filesystem", "type": "stdio", "command": "npx",
-    #      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]},
-    #     {"name": "my-api", "type": "sse", "url": "http://localhost:8000/sse"}
-    #   ]
-    "mcp_servers": [],
+    "skill": {},  # Per-skill runtime config; nested keys flatten to SKILL_<NAME>_<KEY> env vars at startup
+    "mcp_servers": [],  # MCP server list; each entry supports type "stdio" (local process) or "sse" (remote URL)
 }
 
 

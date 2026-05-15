@@ -172,10 +172,17 @@ class AgentLLMModel(LLMModel):
                 # reasoning trace, but still benefit from the higher answer
                 # quality the thinking pass produces.
                 from config import conf
+                thinking_enabled = bool(conf().get("enable_thinking", False))
                 kwargs['thinking'] = (
-                    {"type": "enabled"} if conf().get("enable_thinking", False)
+                    {"type": "enabled"} if thinking_enabled
                     else {"type": "disabled"}
                 )
+                # Reasoning effort is only meaningful when thinking is on.
+                # Bots that don't understand the kwarg drop it silently.
+                if thinking_enabled:
+                    effort = conf().get("reasoning_effort", "high")
+                    if effort in ("high", "max"):
+                        kwargs['reasoning_effort'] = effort
 
                 response = self.bot.call_with_tools(**kwargs)
                 return self._format_response(response)
@@ -227,10 +234,17 @@ class AgentLLMModel(LLMModel):
                 # reasoning trace, but still benefit from the higher answer
                 # quality the thinking pass produces.
                 from config import conf
+                thinking_enabled = bool(conf().get("enable_thinking", False))
                 kwargs['thinking'] = (
-                    {"type": "enabled"} if conf().get("enable_thinking", False)
+                    {"type": "enabled"} if thinking_enabled
                     else {"type": "disabled"}
                 )
+                # Reasoning effort is only meaningful when thinking is on.
+                # Bots that don't understand the kwarg drop it silently.
+                if thinking_enabled:
+                    effort = conf().get("reasoning_effort", "high")
+                    if effort in ("high", "max"):
+                        kwargs['reasoning_effort'] = effort
 
                 stream = self.bot.call_with_tools(**kwargs)
                 
