@@ -37,5 +37,6 @@
   "agent_max_context_turns": 20,
   "agent_max_steps": 20,
   "enable_thinking": false,
+  "reasoning_effort": "high",
   "knowledge": true
 }

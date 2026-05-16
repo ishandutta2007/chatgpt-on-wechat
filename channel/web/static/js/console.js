@@ -3714,6 +3714,12 @@ function connectWeixinAfterQr() {
 // =====================================================================
 // WeCom Bot QR Auth
 // =====================================================================
+// NOTE: This is the only remaining external script in the Web Console.
+// Tencent's WeCom Bot SDK must be loaded from their official CDN — it
+// performs runtime origin/signature checks and will not work if
+// self-hosted. The SDK is fetched lazily, only when the user opens the
+// "WeCom Bot" channel QR-login flow, so the rest of the console works
+// fully offline.
 const WECOM_BOT_SDK_URL = 'https://wwcdn.weixin.qq.com/node/wework/js/wecom-aibot-sdk@0.1.0.min.js';
 const WECOM_BOT_SOURCE = 'cowagent';
 let _wecomSdkLoaded = false;
@@ -4588,7 +4594,7 @@ function ensureD3Loaded() {
     if (_d3LoadPromise) return _d3LoadPromise;
     _d3LoadPromise = new Promise((resolve, reject) => {
         const script = document.createElement('script');
-        script.src = 'https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js';
+        script.src = 'assets/vendor/d3/d3.min.js';
         script.async = true;
         script.onload = () => resolve(window.d3);
         script.onerror = () => reject(new Error('Failed to load d3'));
