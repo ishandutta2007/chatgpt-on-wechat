@@ -696,7 +696,10 @@ class WebChannel(ChatChannel):
             return f.read()
 
     def startup(self):
+        host = conf().get("web_host", "0.0.0.0")
         port = conf().get("web_port", 9899)
+        # Treat wildcard binds as public exposure for the security hint below.
+        is_public_bind = host in ("0.0.0.0", "", "::")
 
         # 打印可用渠道类型提示
         logger.info(
@@ -712,7 +715,10 @@ class WebChannel(ChatChannel):
         logger.info("[WebChannel]   9. wechatmp_service - 企业公众号")
         logger.info("[WebChannel] ✅ Web控制台已运行")
         logger.info(f"[WebChannel] 🌐 本地访问: http://localhost:{port}")
-        logger.info(f"[WebChannel] 🌍 服务器访问: http://YOUR_IP:{port} (请将YOUR_IP替换为服务器IP)")
+        if is_public_bind:
+            logger.info(f"[WebChannel] 🌍 服务器访问: http://YOUR_IP:{port} (请将YOUR_IP替换为服务器IP)")
+            if not _is_password_enabled():
+                logger.info("[WebChannel] 提示：当前未设置 web_password，如需公网部署请配置访问密码")
 
         try:
             import webbrowser
@@ -772,7 +778,7 @@ class WebChannel(ChatChannel):
         # Build WSGI app with middleware (same as runsimple but without print)
         func = web.httpserver.StaticMiddleware(app.wsgifunc())
         func = web.httpserver.LogMiddleware(func)
-        server = web.httpserver.WSGIServer(("0.0.0.0", port), func)
+        server = web.httpserver.WSGIServer((host, port), func)
         server.daemon_threads = True
         # Default request_queue_size(5) / timeout(10s) / numthreads(10) are
         # too small: when SSE streams occupy many threads, the backlog fills
