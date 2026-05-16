@@ -37,6 +37,8 @@ services:
       DINGTALK_CLIENT_SECRET: ''
       WECOM_BOT_ID: ''
       WECOM_BOT_SECRET: ''
+      # 如需通过宿主机访问 Web 控制台，改为 '0.0.0.0' 并设置 WEB_PASSWORD
+      WEB_HOST: '127.0.0.1'
       WEB_PASSWORD: ''
       AGENT: 'True'
       AGENT_MAX_CONTEXT_TOKENS: 50000

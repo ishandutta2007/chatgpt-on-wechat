@@ -696,10 +696,10 @@ class WebChannel(ChatChannel):
             return f.read()
 
     def startup(self):
-        host = conf().get("web_host", "0.0.0.0")
+        configured_host = conf().get("web_host", "")
+        host = configured_host or ("0.0.0.0" if _is_password_enabled() else "127.0.0.1")
         port = conf().get("web_port", 9899)
-        # Treat wildcard binds as public exposure for the security hint below.
-        is_public_bind = host in ("0.0.0.0", "", "::")
+        is_public_bind = host in ("0.0.0.0", "::")
 
         # 打印可用渠道类型提示
         logger.info(
@@ -716,9 +716,11 @@ class WebChannel(ChatChannel):
         logger.info("[WebChannel] ✅ Web控制台已运行")
         logger.info(f"[WebChannel] 🌐 本地访问: http://localhost:{port}")
         if is_public_bind:
-            logger.info(f"[WebChannel] 🌍 服务器访问: http://YOUR_IP:{port} (请将YOUR_IP替换为服务器IP)")
+            logger.info(f"[WebChannel] 🌍 服务器访问: http://YOUR_IP:{port} (将YOUR_IP替换为服务器IP)")
             if not _is_password_enabled():
-                logger.info("[WebChannel] 提示：当前未设置 web_password，如需公网部署请配置访问密码")
+                logger.info("[WebChannel] ⚠️  当前监听 0.0.0.0 且未设置 web_password，公网部署建议在 config.json 中配置访问密码")
+        else:
+            logger.info(f"[WebChannel] 🔒 当前仅监听 {host}，仅本机可访问。如需公网访问，请将 web_host 改为 0.0.0.0 并配置 web_password 密码")
 
         try:
             import webbrowser

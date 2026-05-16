@@ -204,8 +204,7 @@ cow install-browser
   "group_speech_recognition": false,                          # 是否开启群组语音识别
   "voice_reply_voice": false,                                 # 是否使用语音回复语音
   "use_linkai": false,                                        # 是否使用 LinkAI 接口，默认关闭，设置为 true 后可对接 LinkAI 平台模型
-  "web_host": "0.0.0.0",                                      # Web 控制台监听地址，设为 "127.0.0.1" 表示仅本机可访问
-  "web_password": "",                                         # Web 控制台访问密码，留空则不启用密码保护（公网部署强烈建议设置）
+  "web_password": "",                                         # Web 控制台访问密码，留空则不启用密码保护（监听 0.0.0.0 时务必设置）
   "agent": true,                                              # 是否启用 Agent 模式，启用后拥有多轮工具决策、长期记忆、Skills 能力等
   "agent_workspace": "~/cow",                                 # Agent 的工作空间路径，用于存储 memory、skills、系统设定等
   "agent_max_context_tokens": 50000,                          # Agent 模式下最大上下文 tokens，超出将自动智能压缩处理
@@ -716,14 +715,16 @@ Coding Plan 是各厂商推出的编程包月套餐，所有厂商均可通过 O
 ```json
 {
     "channel_type": "web",
+    "web_host": "0.0.0.0",
+    "web_password": "YOUR PASSWORD",
     "web_port": 9899
 }
 ```
 
-- `web_host`: 默认为 `0.0.0.0`（所有网卡可访问），如只在本机使用可改为 `127.0.0.1` 仅监听本地
+- `web_host`: 监听地址，默认 `127.0.0.1`（仅本机），如需公网访问请改为 `0.0.0.0` 并设置密码
 - `web_port`: 默认为 9899，可按需更改，需要服务器防火墙和安全组放行该端口
-- `web_password`: 访问密码，留空则不启用密码保护。部署在公网环境时建议设置
-- 如本地运行，启动后请访问 `http://localhost:9899/chat` ；如服务器运行，请访问 `http://ip:9899/chat` 
+- `web_password`: 访问密码，留空则不启用密码保护。部署在公网环境时请务必设置
+- 如本地运行，启动后请访问 `http://localhost:9899` ；如服务器运行，请访问 `http://YOUR_IP:9899`
 > 注：请将上述 url 中的 ip 或者 port 替换为实际的值
 </details>
 

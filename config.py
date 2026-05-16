@@ -205,7 +205,7 @@ available_setting = {
     "Minimax_base_url": "",
     "deepseek_api_key": "",
     "deepseek_api_base": "https://api.deepseek.com/v1",
-    "web_host": "0.0.0.0",  # Web console bind address; set to "127.0.0.1" to restrict access to localhost only
+    "web_host": "",  # Web console bind address; empty means auto
     "web_port": 9899,
     "web_password": "",  # Web console password; empty means no authentication required
     "web_session_expire_days": 30,  # Auth session expiry in days
