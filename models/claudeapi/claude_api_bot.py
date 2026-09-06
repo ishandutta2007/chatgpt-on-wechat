@@ -569,6 +569,11 @@ class ClaudeAPIBot(Bot, OpenAIImage):
         tool_uses_map = {}  # {index: {id, name, input}}
         current_tool_use_index = -1
         stop_reason = None  # Track stop reason from Claude
+        # Track token usage across the stream: Anthropic reports input_tokens on
+        # the message_start event and (cumulative) output_tokens on message_delta.
+        # Surfaced as a final usage chunk so the agent can show a real count.
+        usage_input_tokens = 0
+        usage_output_tokens = 0
 
         try:
             # Make streaming HTTP request
@@ -608,7 +613,13 @@ class ClaudeAPIBot(Bot, OpenAIImage):
                             event = json.loads(line)
                             event_type = event.get("type")
 
-                            if event_type == "content_block_start":
+                            if event_type == "message_start":
+                                # Anthropic reports the prompt token count here.
+                                msg_usage = (event.get("message", {}) or {}).get("usage", {}) or {}
+                                usage_input_tokens = msg_usage.get("input_tokens", 0) or 0
+                                usage_output_tokens = msg_usage.get("output_tokens", 0) or usage_output_tokens
+
+                            elif event_type == "content_block_start":
                                 # New content block
                                 block = event.get("content_block", {})
                                 if block.get("type") == "tool_use":
@@ -662,6 +673,11 @@ class ClaudeAPIBot(Bot, OpenAIImage):
                                 if "stop_reason" in delta:
                                     stop_reason = delta.get("stop_reason")
                                     logger.info(f"[Claude] Stream stop_reason: {stop_reason}")
+                                # Anthropic reports the (cumulative) output token
+                                # count on message_delta.
+                                md_usage = event.get("usage", {}) or {}
+                                if md_usage.get("output_tokens"):
+                                    usage_output_tokens = md_usage.get("output_tokens")
                                 
                                 # Message complete - yield tool calls if any
                                 if tool_uses_map:
@@ -692,6 +708,22 @@ class ClaudeAPIBot(Bot, OpenAIImage):
                             elif event_type == "message_stop":
                                 # Final event - log completion
                                 logger.debug(f"[Claude] Stream completed with stop_reason: {stop_reason}")
+                                # Surface token usage as a trailing chunk (OpenAI
+                                # streaming shape) so the agent can record a real
+                                # prompt_tokens count for the context indicator.
+                                if usage_input_tokens or usage_output_tokens:
+                                    yield {
+                                        "id": event.get("id", ""),
+                                        "object": "chat.completion.chunk",
+                                        "created": int(time.time()),
+                                        "model": request_params["model"],
+                                        "choices": [],
+                                        "usage": {
+                                            "prompt_tokens": usage_input_tokens,
+                                            "completion_tokens": usage_output_tokens,
+                                            "total_tokens": usage_input_tokens + usage_output_tokens,
+                                        },
+                                    }
 
                         except json.JSONDecodeError:
                             continue

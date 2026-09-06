@@ -240,6 +240,10 @@ class MimoBot(Bot, OpenAICompatibleBot):
                 "messages": converted_messages,
                 "stream": stream,
             }
+            # Ask for a trailing usage chunk on streaming calls so the agent can
+            # surface a real prompt_tokens count for the context indicator.
+            if stream:
+                request_body["stream_options"] = {"include_usage": True}
             if max_tokens is not None:
                 # MiMo 使用 max_completion_tokens 命名（含可见输出 + 推理 token）
                 request_body["max_completion_tokens"] = max_tokens
@@ -309,6 +313,7 @@ class MimoBot(Bot, OpenAICompatibleBot):
 
             current_tool_calls = {}
             finish_reason = None
+            stream_usage = None  # Provider-reported token usage (include_usage)
 
             for line in response.iter_lines():
                 if not line:
@@ -336,6 +341,11 @@ class MimoBot(Bot, OpenAICompatibleBot):
                     logger.error(f"[MIMO] stream error: {error_msg}")
                     yield {"error": True, "message": error_msg, "status_code": 500}
                     return
+
+                # The include_usage chunk carries usage with an empty choices
+                # list — capture it before the choices skip below drops it.
+                if isinstance(chunk.get("usage"), dict):
+                    stream_usage = chunk["usage"]
 
                 if not chunk.get("choices"):
                     continue
@@ -388,13 +398,16 @@ class MimoBot(Bot, OpenAICompatibleBot):
                             }]
                         }
 
-            yield {
+            final_chunk = {
                 "choices": [{
                     "index": 0,
                     "delta": {},
                     "finish_reason": finish_reason,
                 }]
             }
+            if stream_usage is not None:
+                final_chunk["usage"] = stream_usage
+            yield final_chunk
 
         except requests.exceptions.Timeout:
             logger.error("[MIMO] Request timeout")

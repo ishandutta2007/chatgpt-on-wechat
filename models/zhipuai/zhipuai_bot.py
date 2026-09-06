@@ -380,9 +380,23 @@ class ZHIPUAIBot(Bot, ZhipuAIImage):
         """Handle streaming ZhipuAI API response"""
         try:
             stream = self._create_completion(request_params)
+            stream_usage = None  # Provider-reported token usage
             
             # Stream chunks to caller, converting to OpenAI format
             for chunk in stream:
+                # ZhipuAI attaches usage to the final chunk (which may have an
+                # empty choices list) — capture it before the skip below.
+                chunk_usage = getattr(chunk, "usage", None)
+                if chunk_usage is not None:
+                    try:
+                        stream_usage = {
+                            "prompt_tokens": chunk_usage.prompt_tokens,
+                            "completion_tokens": chunk_usage.completion_tokens,
+                            "total_tokens": chunk_usage.total_tokens,
+                        }
+                    except AttributeError:
+                        pass
+
                 if not chunk.choices:
                     continue
                 
@@ -438,6 +452,11 @@ class ZHIPUAIBot(Bot, ZhipuAIImage):
                     openai_chunk["choices"][0]["delta"]["tool_calls"] = openai_tool_calls
                 
                 yield openai_chunk
+
+            # Emit a trailing usage-only chunk so the agent can record a real
+            # prompt_tokens count for the context indicator.
+            if stream_usage is not None:
+                yield {"choices": [], "usage": stream_usage}
                 
         except Exception as e:
             logger.error(f"[ZHIPU_AI] stream response error: {e}")

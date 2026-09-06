@@ -540,6 +540,7 @@ class MinimaxBot(Bot):
             current_reasoning = []
             finish_reason = None
             chunk_count = 0
+            stream_usage = None  # Provider-reported token usage
 
             # Process SSE stream
             for line in response.iter_lines():
@@ -576,6 +577,11 @@ class MinimaxBot(Bot):
                         "status_code": int(http_code) if http_code.isdigit() else 500
                     }
                     return
+
+                # MiniMax reports usage on a trailing chunk (sometimes with an
+                # empty choices list) — capture it before the skip below.
+                if isinstance(chunk.get("usage"), dict):
+                    stream_usage = chunk["usage"]
 
                 if not chunk.get("choices"):
                     continue
@@ -670,14 +676,17 @@ class MinimaxBot(Bot):
                     logger.debug(f"[MINIMAX] {reasoning_text}")
                 logger.debug(f"[MINIMAX] ===== End Reasoning Details =====")
 
-            # Yield final chunk with finish_reason (OpenAI format)
-            yield {
+            # Yield final chunk with finish_reason (+ usage when reported)
+            final_chunk = {
                 "choices": [{
                     "index": 0,
                     "delta": {},
                     "finish_reason": finish_reason
                 }]
             }
+            if stream_usage is not None:
+                final_chunk["usage"] = stream_usage
+            yield final_chunk
 
         except requests.exceptions.Timeout:
             logger.error("[MINIMAX] Request timeout")

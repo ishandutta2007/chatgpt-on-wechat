@@ -532,6 +532,9 @@ class ModelScopeBot(Bot):
             body = args.copy()
             body["messages"] = self._convert_messages_for_modelscope(session.messages)
             body["stream"] = True
+            # Ask for a trailing usage chunk so the agent can surface a real
+            # prompt_tokens count for the context indicator.
+            body["stream_options"] = {"include_usage": True}
             
             response = requests.post(
                 "{}/chat/completions".format(self.base_url),
@@ -547,6 +550,7 @@ class ModelScopeBot(Bot):
             
             current_tool_calls = {}
             finish_reason = None
+            stream_usage = None  # Provider-reported token usage
             
             for line in response.iter_lines():
                 if not line:
@@ -562,6 +566,11 @@ class ModelScopeBot(Bot):
                     if chunk.get("error"):
                         yield {"error": True, "message": str(chunk["error"]), "status_code": 500}
                         return
+                    
+                    # The include_usage chunk carries usage with an empty choices
+                    # list — capture it before the choices skip below drops it.
+                    if isinstance(chunk.get("usage"), dict):
+                        stream_usage = chunk["usage"]
                     
                     choices = chunk.get("choices")
                     if not choices or len(choices) == 0:
@@ -720,13 +729,16 @@ class ModelScopeBot(Bot):
                                 }]
                             }
             
-            yield {
+            final_chunk = {
                 "choices": [{
                     "index": 0,
                     "delta": {},
                     "finish_reason": finish_reason or "stop"
                 }]
             }
+            if stream_usage is not None:
+                final_chunk["usage"] = stream_usage
+            yield final_chunk
             
         except Exception as e:
             logger.error("[MODELSCOPE] stream tool call error: {}".format(e))

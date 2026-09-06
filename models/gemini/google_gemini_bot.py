@@ -680,6 +680,7 @@ class GoogleGeminiBot(Bot):
             last_safety_ratings = None
             raw_chunks = []  # Buffer raw chunks for diagnostics on empty response
             non_text_part_keys = []  # Track non-text/functionCall part keys (e.g. thoughtSignature)
+            last_usage_meta = None  # Gemini reports usageMetadata (cumulative) per chunk
             
             for line in response.iter_lines():
                 if not line:
@@ -698,7 +699,12 @@ class GoogleGeminiBot(Bot):
                     chunk_data = json.loads(line)
                     chunk_count += 1
                     raw_chunks.append(chunk_data)
-                    
+
+                    # Gemini reports usageMetadata (cumulative) on chunks — keep
+                    # the latest so the final chunk can carry a real token count.
+                    if isinstance(chunk_data.get("usageMetadata"), dict):
+                        last_usage_meta = chunk_data["usageMetadata"]
+
                     candidates = chunk_data.get("candidates", [])
                     if not candidates:
                         # Could be a chunk with only usageMetadata / promptFeedback
@@ -819,8 +825,8 @@ class GoogleGeminiBot(Bot):
                 except Exception as dump_err:
                     logger.warning(f"[Gemini] Failed to dump raw chunks: {dump_err}")
             
-            # Final chunk
-            yield {
+            # Final chunk (+ usage when Gemini reported usageMetadata)
+            final_chunk = {
                 "id": f"chatcmpl-{time.time()}",
                 "object": "chat.completion.chunk",
                 "created": int(time.time()),
@@ -831,6 +837,15 @@ class GoogleGeminiBot(Bot):
                     "finish_reason": "tool_calls" if all_tool_calls else "stop"
                 }]
             }
+            if last_usage_meta is not None:
+                # Map Gemini's usageMetadata to the OpenAI usage shape the agent
+                # reads (prompt_tokens is what the context indicator needs).
+                final_chunk["usage"] = {
+                    "prompt_tokens": last_usage_meta.get("promptTokenCount", 0),
+                    "completion_tokens": last_usage_meta.get("candidatesTokenCount", 0),
+                    "total_tokens": last_usage_meta.get("totalTokenCount", 0),
+                }
+            yield final_chunk
                     
         except Exception as e:
             logger.error(f"[Gemini] stream response error: {e}", exc_info=True)

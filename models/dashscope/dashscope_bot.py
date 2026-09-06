@@ -502,6 +502,17 @@ class DashscopeBot(Bot):
                 if tool_calls:
                     openai_chunk["choices"][0]["delta"]["tool_calls"] = self._convert_tool_calls_to_openai_format(tool_calls)
 
+                # Attach token usage (DashScope reports it, cumulative, per
+                # chunk) mapped to the OpenAI shape so the agent can show a real
+                # prompt_tokens count for the context indicator.
+                usage = resp_dict.get("usage")
+                if isinstance(usage, dict):
+                    openai_chunk["usage"] = {
+                        "prompt_tokens": usage.get("input_tokens", 0),
+                        "completion_tokens": usage.get("output_tokens", 0),
+                        "total_tokens": usage.get("total_tokens", 0),
+                    }
+
                 yield openai_chunk
 
         except Exception as e:
