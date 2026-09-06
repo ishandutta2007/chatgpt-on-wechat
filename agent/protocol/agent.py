@@ -486,21 +486,57 @@ class Agent:
         input_ceiling = max(1, context_window - self._get_output_reserve_tokens())
         limit = min(self.max_context_tokens, input_ceiling) if self.max_context_tokens else input_ceiling
 
-        used = system_tokens + tools_tokens + history_tokens
+        estimated_used = system_tokens + tools_tokens + history_tokens
         model_name = getattr(self.model, "model", None) if self.model else None
+
+        # Prefer the provider's real prompt_tokens from the last turn when we
+        # have it (populated by the stream executor via stream_options.
+        # include_usage). It counts the exact input the model saw — system +
+        # tools + history — so it is the accurate `used`. The per-slice
+        # breakdown stays estimate-based (the API only reports a single total),
+        # but we scale the slices so they sum to the real total, keeping the
+        # chart both accurate overall and readable per slice.
+        real_prompt_tokens = None
+        last_usage = getattr(self, "last_usage", None)
+        if isinstance(last_usage, dict):
+            try:
+                pt = int(last_usage.get("prompt_tokens") or 0)
+                if pt > 0:
+                    real_prompt_tokens = pt
+            except (TypeError, ValueError):
+                real_prompt_tokens = None
+
+        if real_prompt_tokens is not None:
+            used = real_prompt_tokens
+            estimated = False
+            if estimated_used > 0:
+                scale = real_prompt_tokens / estimated_used
+                system_slice = round(system_tokens * scale)
+                tools_slice = round(tools_tokens * scale)
+                # Absorb rounding drift into history so slices sum to `used`.
+                history_slice = max(0, used - system_slice - tools_slice)
+            else:
+                system_slice = tools_slice = 0
+                history_slice = used
+        else:
+            used = estimated_used
+            estimated = True
+            system_slice, tools_slice, history_slice = (
+                system_tokens, tools_tokens, history_tokens,
+            )
 
         return {
             "available": True,
-            "estimated": True,
+            "estimated": estimated,
             "model": model_name,
             "window": context_window,
             "limit": limit,
             "used": used,
             "messages": len(self.messages),
             "breakdown": {
-                "system": system_tokens,
-                "tools": tools_tokens,
-                "history": history_tokens,
+                "system": system_slice,
+                "tools": tools_slice,
+                "history": history_slice,
                 "free": max(0, limit - used),
             },
         }

@@ -117,6 +117,14 @@ class OpenAICompatibleBot:
                 "presence_penalty": kwargs.get("presence_penalty", api_config.get('default_presence_penalty', 0.0)),
                 "stream": stream
             }
+            # Ask for a final usage chunk on streaming calls so the agent can
+            # surface a real prompt_tokens count (context-usage indicator)
+            # instead of the char-based estimate. Providers that don't support
+            # stream_options simply ignore it or omit the usage chunk, in which
+            # case the agent falls back to the estimate — so this is safe to
+            # always request on the OpenAI-compatible path.
+            if stream:
+                request_params["stream_options"] = {"include_usage": True}
             # GPT-5.x / o-series reasoning models only accept default
             # temperature/top_p and reject penalty params.
             is_gpt5_reasoning = self._is_gpt5_reasoning_model(model_name)

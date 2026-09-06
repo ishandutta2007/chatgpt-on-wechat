@@ -1406,6 +1406,7 @@ class AgentStreamExecutor:
         tool_calls_buffer = {}  # {index: {id, name, arguments}}
         gemini_raw_parts = None  # Preserve Gemini thoughtSignature for round-trip
         stop_reason = None  # Track why the stream stopped
+        stream_usage = None  # Real token usage from the provider, if reported
 
         try:
             stream = self.model.call_stream(request)
@@ -1476,6 +1477,14 @@ class AgentStreamExecutor:
                     else:
                         # Raise exception with full error message for retry logic
                         raise Exception(f"{error_msg} (Status: {status_code}, Code: {error_code}, Type: {error_type})")
+
+                # Capture the provider-reported token usage when present. With
+                # stream_options.include_usage the OpenAI-compatible path emits a
+                # final chunk carrying `usage` (often with an empty `choices`),
+                # but some providers attach it to a normal chunk — so read it
+                # whenever it appears, independent of the choices branch below.
+                if isinstance(chunk, dict) and isinstance(chunk.get("usage"), dict):
+                    stream_usage = chunk["usage"]
 
                 # Parse chunk
                 if isinstance(chunk, dict) and chunk.get("choices"):
@@ -1652,6 +1661,20 @@ class AgentStreamExecutor:
             else:
                 logger.error(f"❌ LLM call error (non-retryable): {e}", exc_info=True)
             raise
+
+        # Persist the provider-reported usage (if any) so the context-usage
+        # indicator can show a real prompt_tokens count instead of the estimate.
+        # prompt_tokens is the whole input the model saw this turn — system +
+        # tools + history — which is exactly the "used" the chart wants.
+        if stream_usage is not None:
+            try:
+                self.agent.last_usage = {
+                    "prompt_tokens": int(stream_usage.get("prompt_tokens") or 0),
+                    "completion_tokens": int(stream_usage.get("completion_tokens") or 0),
+                    "total_tokens": int(stream_usage.get("total_tokens") or 0),
+                }
+            except (TypeError, ValueError):
+                pass
 
         # Parse tool calls
         tool_calls = []
