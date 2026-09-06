@@ -281,11 +281,11 @@ available_setting = {
     "agent_bindings": [],
     # Manual cap on the Agent-mode input budget, used to control cost / token
     # burn: history is compacted once the prompt reaches this many tokens, even
-    # when the model's window is far larger. Defaults to 128000. This value is
+    # when the model's window is far larger. Defaults to 64000. This value is
     # still clamped below the effective model's window (window - output
     # reserve), so a small-window model is never asked for more than it allows.
     # Set 0 to disable the manual cap and follow the model window instead.
-    "agent_max_context_tokens": 128000,
+    "agent_max_context_tokens": 64000,
     "agent_max_context_turns": 30,  # max context memory turns in Agent mode
     "agent_max_steps": 30,  # max decision steps per run in Agent mode
     # Default permission mode for sessions that have not picked one of their own:
