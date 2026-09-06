@@ -279,12 +279,13 @@ available_setting = {
     # and agent_id; add conversation_id to bind one chat rather than the whole
     # channel. Unbound conversations go to default_agent_id.
     "agent_bindings": [],
-    # Optional manual override for the Agent-mode input budget. Leave 0 (the
-    # default) to derive the budget from the effective model: the catalog's
-    # context_window when set, else the name-based heuristics. A positive value
-    # forces that ceiling (still clamped below the model's window), for gateways
-    # or self-hosted models whose real window we can't infer.
-    "agent_max_context_tokens": 0,
+    # Manual cap on the Agent-mode input budget, used to control cost / token
+    # burn: history is compacted once the prompt reaches this many tokens, even
+    # when the model's window is far larger. Defaults to 128000. This value is
+    # still clamped below the effective model's window (window - output
+    # reserve), so a small-window model is never asked for more than it allows.
+    # Set 0 to disable the manual cap and follow the model window instead.
+    "agent_max_context_tokens": 128000,
     "agent_max_context_turns": 30,  # max context memory turns in Agent mode
     "agent_max_steps": 30,  # max decision steps per run in Agent mode
     # Default permission mode for sessions that have not picked one of their own:

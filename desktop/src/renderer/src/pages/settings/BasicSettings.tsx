@@ -85,9 +85,9 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
   const [apiKeyVisible, setApiKeyVisible] = useState(false)
 
   // agent card
-  // Optional manual override for the input budget; 0 means "derive from the
-  // effective model's context window".
-  const [maxTokens, setMaxTokens] = useState(0)
+  // Manual cap on the input budget (compact once reached, to control cost);
+  // 0 disables the cap and follows the model window.
+  const [maxTokens, setMaxTokens] = useState(128000)
   const [maxTurns, setMaxTurns] = useState(20)
   const [maxSteps, setMaxSteps] = useState(20)
   const [thinking, setThinking] = useState(false)
@@ -148,7 +148,7 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
       const data = await apiClient.getConfig()
       setConfig(data)
       setModel(data.model || '')
-      setMaxTokens(data.agent_max_context_tokens ?? 0)
+      setMaxTokens(data.agent_max_context_tokens ?? 128000)
       setMaxTurns(data.agent_max_context_turns ?? 20)
       setMaxSteps(data.agent_max_steps ?? 20)
       setThinking(!!data.enable_thinking)

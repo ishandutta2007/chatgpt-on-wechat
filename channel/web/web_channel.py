@@ -2835,9 +2835,9 @@ class ConfigHandler:
                 "bot_type": "openai" if local_config.get("bot_type") == "chatGPT" else local_config.get("bot_type", ""),
                 "use_linkai": bool(local_config.get("use_linkai", False)),
                 "channel_type": local_config.get("channel_type", ""),
-                # Optional manual override for the input budget; 0/unset means
-                # derive it from the effective model's context window.
-                "agent_max_context_tokens": local_config.get("agent_max_context_tokens", 0),
+                # Manual cap on the input budget (compact once reached); 0
+                # disables the cap and follows the model window.
+                "agent_max_context_tokens": local_config.get("agent_max_context_tokens", 128000),
                 "agent_max_context_turns": local_config.get("agent_max_context_turns", 20),
                 "agent_max_steps": local_config.get("agent_max_steps", 20),
                 "enable_thinking": bool(local_config.get("enable_thinking", False)),

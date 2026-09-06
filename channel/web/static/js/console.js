@@ -230,7 +230,7 @@ const I18N = {
         config_model_advanced: '高级配置',
         config_channel: '通道配置',
         config_agent_enabled: 'Agent 模式',
-        config_max_tokens: '最大上下文 Token', config_max_tokens_hint: '手动覆盖上下文输入预算；留空或填 0 则按当前模型的上下文窗口自动计算',
+        config_max_tokens: '最大上下文 Token', config_max_tokens_hint: '上下文输入预算上限，达到后会压缩历史以控制成本；仍不会超过当前模型窗口。填 0 表示不限制、跟随模型窗口',
         config_max_turns: '最大记忆轮次', config_max_turns_hint: '一问一答为一轮，超过后会智能压缩处理',
         config_max_steps: '最大执行步数', config_max_steps_hint: '单次对话中 Agent 最多调用工具的次数',
         config_enable_thinking: '深度思考', config_enable_thinking_hint: '是否启用深度思考模式',
@@ -667,7 +667,7 @@ const I18N = {
         config_model_advanced: '高階設定',
         config_channel: '管道設定',
         config_agent_enabled: 'Agent 模式',
-        config_max_tokens: '最大上下文 Token', config_max_tokens_hint: '手動覆蓋上下文輸入預算；留空或填 0 則按當前模型的上下文視窗自動計算',
+        config_max_tokens: '最大上下文 Token', config_max_tokens_hint: '上下文輸入預算上限，達到後會壓縮歷史以控制成本；仍不會超過當前模型視窗。填 0 表示不限制、跟隨模型視窗',
         config_max_turns: '最大記憶輪次', config_max_turns_hint: '一問一答為一輪，超過後會智慧壓縮處理',
         config_max_steps: '最大執行步數', config_max_steps_hint: '單次對話中 Agent 最多呼叫工具的次數',
         config_enable_thinking: '深度思考', config_enable_thinking_hint: '是否啟用深度思考模式',
@@ -1099,7 +1099,7 @@ const I18N = {
         config_model_advanced: 'Advanced',
         config_channel: 'Channel Configuration',
         config_agent_enabled: 'Agent Mode',
-        config_max_tokens: 'Max Context Tokens', config_max_tokens_hint: 'Manually override the context input budget; leave empty or 0 to derive it from the current model\u2019s context window',
+        config_max_tokens: 'Max Context Tokens', config_max_tokens_hint: 'Cap on the context input budget; history is compacted once reached, to control cost. Still clamped below the model window. Set 0 to disable the cap and follow the model window',
         config_max_turns: 'Max Memory Turns', config_max_turns_hint: 'One Q&A pair = one turn, auto-compressed when exceeded',
         config_max_steps: 'Max Steps', config_max_steps_hint: 'Max tool calls the Agent can make in a single conversation',
         config_enable_thinking: 'Deep Thinking', config_enable_thinking_hint: 'Enable deep thinking mode',
@@ -8717,7 +8717,7 @@ function initConfigView(data) {
     onProviderChange(cfgProviderValue);
     syncModelSelection(configCurrentModel);
 
-    document.getElementById('cfg-max-tokens').value = data.agent_max_context_tokens || 0;
+    document.getElementById('cfg-max-tokens').value = data.agent_max_context_tokens ?? 128000;
     document.getElementById('cfg-max-turns').value = data.agent_max_context_turns || 20;
     document.getElementById('cfg-max-steps').value = data.agent_max_steps || 20;
     const thinkingEl = document.getElementById('cfg-enable-thinking');
