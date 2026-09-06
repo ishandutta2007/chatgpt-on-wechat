@@ -2423,11 +2423,120 @@
 }
 .ctx-usage-empty {
     color: #64748b;
-    padding: 8px 0;
-    min-height: 24px;
+    text-align: center;
+    white-space: nowrap;
 }
 .dark .ctx-usage-empty {
     color: #94a3b8;
+}
+/* Empty / error state: a single line, so the card hugs the text instead of
+   padding a fixed-width box around it. */
+.ctx-usage-pop--compact {
+    width: auto;
+    padding: 8px 12px;
+}
+
+/* Mini pie inside the composer button (replaces the trash icon once a session
+   has context). Sized to sit like an icon; inherits color for the empty ring. */
+.ctx-pie-mini {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    line-height: 0;
+}
+.ctx-pie-mini svg { display: block; }
+.ctx-pie-btn { position: relative; }
+
+/* The usage card is interactive now (buttons), so it must receive the pointer. */
+.ctx-usage-pop.show {
+    pointer-events: auto;
+}
+
+/* Action row at the bottom of the card. */
+.ctx-usage-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #e2e8f0;
+}
+.dark .ctx-usage-actions { border-top-color: #334155; }
+.ctx-act-btn {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 6px 4px;
+    font-size: 11px;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+    background: #f8fafc;
+    color: #334155;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
+    white-space: nowrap;
+}
+.ctx-act-btn:hover {
+    background: #eef2f7;
+    border-color: #cbd5e1;
+    color: #0f172a;
+}
+.ctx-act-btn i { font-size: 11px; }
+.dark .ctx-act-btn {
+    background: rgba(255,255,255,0.04);
+    border-color: #334155;
+    color: #cbd5e1;
+}
+.dark .ctx-act-btn:hover {
+    background: rgba(255,255,255,0.08);
+    border-color: #475569;
+    color: #f1f5f9;
+}
+
+/* Loading overlay shown on the card while a synchronous compaction runs. */
+.ctx-usage-loading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border-radius: 12px;
+    background: rgba(255,255,255,0.82);
+    color: #334155;
+    font-size: 12px;
+    font-weight: 500;
+    backdrop-filter: blur(1px);
+}
+.dark .ctx-usage-loading {
+    background: rgba(15,23,42,0.82);
+    color: #e2e8f0;
+}
+.ctx-spinner {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 2px solid rgba(100,116,139,0.35);
+    border-top-color: #10b981;
+    animation: ctx-spin 0.7s linear infinite;
+}
+@keyframes ctx-spin { to { transform: rotate(360deg); } }
+
+/* Composer input locked during compaction. */
+.ctx-input-locked {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Brief highlight on the budget field when arriving from the "Budget" action. */
+.cfg-field-highlight {
+    border-color: #10b981 !important;
+    box-shadow: 0 0 0 3px rgba(16,185,129,0.25) !important;
+    transition: box-shadow 0.2s, border-color 0.2s;
 }
 
 /* Example cards: equal height via flex stretch + fixed 2-line description area */

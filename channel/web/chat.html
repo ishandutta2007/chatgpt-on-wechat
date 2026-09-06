@@ -481,9 +481,8 @@
                                                 onclick="newChat()">
                                             <i class="fas fa-plus"></i>
                                         </button>
-                                        <button id="clear-context-btn" type="button" class="composer-icon-btn composer-icon-btn-warn"
-                                                onclick="clearContext()">
-                                            <i class="fas fa-trash-can"></i>
+                                        <button id="clear-context-btn" type="button" class="composer-icon-btn ctx-pie-btn">
+                                            <span id="ctx-pie-mini" class="ctx-pie-mini"><svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="4" opacity="0.35"></circle></svg></span>
                                         </button>
                                         <button id="attach-btn" type="button" class="composer-icon-btn"
                                                 onclick="toggleAttachMenu(event)">
@@ -900,7 +899,7 @@
                                 </div>
 
                                 <!-- Agent Config Card -->
-                                <div class="bg-white dark:bg-[#1A1A1A] rounded-xl border border-slate-200 dark:border-white/10 p-6">
+                                <div id="config-agent-card" class="bg-white dark:bg-[#1A1A1A] rounded-xl border border-slate-200 dark:border-white/10 p-6">
                                     <div class="flex items-center gap-3 mb-5">
                                         <div class="w-9 h-9 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center">
                                             <i class="fas fa-robot text-emerald-500 text-sm"></i>
