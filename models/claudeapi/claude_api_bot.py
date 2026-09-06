@@ -243,21 +243,21 @@ class ClaudeAPIBot(Bot, OpenAIImage):
 
     def _get_max_tokens(self, model: str) -> int:
         """
-        Get max_tokens for the model.
-        Reference from pi-mono:
+        Get the request's max_tokens for the model.
+
+        Only the older Claude 3.x line has a small output cap; everything from
+        Claude 4 onward supports 64K. Default to 64K so a newly released model
+        (e.g. a future claude-*-6) does not silently regress to a tiny cap —
+        no code change needed per new model.
         - Claude 3.5/3.7: 8192
         - Claude 3 Opus: 4096
-        - Default: 8192
+        - Claude 4+ / default: 64000
         """
         if model and (model.startswith("claude-3-5") or model.startswith("claude-3-7")):
             return 8192
         elif model and model.startswith("claude-3") and "opus" in model:
             return 4096
-        elif model and (model.startswith("claude-sonnet-4") or model.startswith("claude-sonnet-5")
-                         or model.startswith("claude-opus-4") or model.startswith("claude-opus-5")
-                         or model.startswith("claude-fable")):
-            return 64000
-        return 8192
+        return 64000
 
     @staticmethod
     def _thinking_params(model: str, thinking: object, max_tokens: int) -> Optional[dict]:
