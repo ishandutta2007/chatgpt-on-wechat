@@ -8012,12 +8012,17 @@ def _project_state(session_id: str, agent_id: str = None) -> dict:
     from common.state_dir import state_root_str
 
     current = project_store.get_project_dir(session_id, agent_id) if session_id else None
+    # Resolve the default workspace against the Agent this session belongs to,
+    # so the selector hint matches the file panel's real root in multi-Agent
+    # setups instead of always pointing at the default Agent's workspace.
+    from common.runtime_identity import RuntimeIdentity
+    default_workspace = state_root_str(RuntimeIdentity(agent_id=agent_id))
     return {
         "current": (
             {"path": current, "name": os.path.basename(current) or current}
             if current else None
         ),
-        "default_workspace": state_root_str(),
+        "default_workspace": default_workspace,
         "projects_root": project_store.projects_root(),
         "recents": project_store.list_recents(),
     }
