@@ -1668,13 +1668,52 @@ class AgentStreamExecutor:
         # tools + history — which is exactly the "used" the chart wants.
         if stream_usage is not None:
             try:
+                # Fingerprint the history this usage describes. get_context_usage
+                # compares it against the live history estimate: if trimming /
+                # compaction (or new turns) has since changed the history, the
+                # real prompt_tokens is stale and it falls back to the estimate.
+                est_history = sum(
+                    self.agent._estimate_message_tokens(m) for m in self.messages
+                )
                 self.agent.last_usage = {
                     "prompt_tokens": int(stream_usage.get("prompt_tokens") or 0),
                     "completion_tokens": int(stream_usage.get("completion_tokens") or 0),
                     "total_tokens": int(stream_usage.get("total_tokens") or 0),
+                    # History estimate at capture time (freshness fingerprint).
+                    "_est_history": est_history,
                 }
             except (TypeError, ValueError):
                 pass
+
+        # Log real provider token usage vs our char-based estimate, so the
+        # accuracy of the context-usage indicator can be judged from the logs.
+        try:
+            if self.agent.last_usage:
+                real_in = self.agent.last_usage.get("prompt_tokens", 0)
+                real_out = self.agent.last_usage.get("completion_tokens", 0)
+                # Rough estimate of what we sent this turn (system + tools +
+                # history), the same numbers the usage chart shows.
+                est_sys = self.agent._estimate_text_tokens(self.system_prompt or "")
+                est_hist = sum(
+                    self.agent._estimate_message_tokens(m) for m in self.messages
+                )
+                est_in = est_sys + est_hist
+                ratio = (est_in / real_in) if real_in else 0
+                logger.info(
+                    f"[Usage] real input={real_in} output={real_out} | "
+                    f"estimate input~={est_in} (sys~={est_sys} hist~={est_hist}) | "
+                    f"est/real={ratio:.2f}"
+                )
+            else:
+                model_name = getattr(self.agent.model, "model", "?") if getattr(self.agent, "model", None) else "?"
+                logger.info(
+                    f"[Usage] model={model_name} did NOT return token usage this "
+                    "turn — its streaming path needs stream_options.include_usage "
+                    "or a trailing usage chunk; context indicator falls back to "
+                    "the char estimate"
+                )
+        except Exception as e:
+            logger.debug(f"[Usage] usage log skipped: {e}")
 
         # Parse tool calls
         tool_calls = []

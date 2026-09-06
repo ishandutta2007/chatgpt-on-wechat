@@ -506,6 +506,19 @@ class Agent:
             except (TypeError, ValueError):
                 real_prompt_tokens = None
 
+        # Staleness guard: last_usage describes the input of a PAST request. If
+        # the history has since been trimmed/compacted (or grown with new
+        # turns), that real prompt_tokens no longer matches what we'd send now,
+        # so drop it and fall back to the live estimate. We compare the live
+        # history estimate against the one captured alongside the usage; a
+        # meaningful drift (>15%) means the history changed under it.
+        if real_prompt_tokens is not None:
+            captured_hist = last_usage.get("_est_history")
+            if isinstance(captured_hist, (int, float)) and captured_hist > 0:
+                drift = abs(history_tokens - captured_hist) / captured_hist
+                if drift > 0.15:
+                    real_prompt_tokens = None
+
         if real_prompt_tokens is not None:
             used = real_prompt_tokens
             estimated = False
@@ -877,6 +890,11 @@ class Agent:
 
             self.messages = new_messages
             after = len(self.messages)
+
+        # The last provider usage described the pre-compaction history, so it is
+        # now stale. Clear it so the context-usage indicator estimates the
+        # freshly compacted history until the next real turn reports usage.
+        self.last_usage = None
 
         logger.info(
             f"[Agent] Manual compact: {turn_count} turns summarized, "
