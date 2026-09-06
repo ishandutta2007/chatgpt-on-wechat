@@ -6916,6 +6916,32 @@ def _addressed_agent_id(text: str, roster: List[dict]) -> str:
     return ""
 
 
+def _as_epoch(value) -> int:
+    """Best-effort convert a session timestamp into a sortable epoch int.
+
+    New databases store ``last_active``/``created_at`` as integer Unix
+    timestamps, but a workspace carried over from an older build may still hold
+    them as ``'YYYY-MM-DD HH:MM:SS'`` strings. Parsing those defensively keeps
+    the merged session list from crashing the whole API (which would leave the
+    web sidebar empty) just because one legacy row can't be ``int()``-ed.
+    """
+    if value is None or value == "":
+        return 0
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        pass
+    from datetime import datetime
+
+    text = str(value).strip()
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"):
+        try:
+            return int(datetime.strptime(text, fmt).timestamp())
+        except ValueError:
+            continue
+    return 0
+
+
 def _list_sessions_across_agents(page: int, page_size: int) -> dict:
     """One page of every Agent's conversations, merged.
 
@@ -6995,8 +7021,8 @@ def _list_sessions_across_agents(page: int, page_size: int) -> dict:
         sid = session.get("session_id")
         kept = by_id.get(sid)
         if kept is None or (
-            (int(session.get("msg_count") or 0), int(session.get("last_active") or 0))
-            > (int(kept.get("msg_count") or 0), int(kept.get("last_active") or 0))
+            (int(session.get("msg_count") or 0), _as_epoch(session.get("last_active")))
+            > (int(kept.get("msg_count") or 0), _as_epoch(kept.get("last_active")))
         ):
             by_id[sid] = session
     total -= len(merged) - len(by_id)
@@ -7007,7 +7033,7 @@ def _list_sessions_across_agents(page: int, page_size: int) -> dict:
     merged.sort(
         key=lambda s: (
             0 if s.get("pinned") else 1,
-            -int(s.get("last_active") or 0),
+            -_as_epoch(s.get("last_active")),
         )
     )
     offset = (max(1, page) - 1) * page_size
