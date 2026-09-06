@@ -38,6 +38,7 @@ Fully compatible with the MCP community standard, identical to Claude Desktop / 
 | `type` | Remote | Remote transport type: `sse` or `streamable-http` (defaults to `sse`) |
 | `headers` | No | Extra HTTP headers for remote requests (e.g. `Authorization`); Streamable HTTP only |
 | `scope` | No | OAuth scope, only for remote servers that require OAuth authorization (optional) |
+| `tool_name_prefix` | No | String prepended to this server's tool names in CowAgent, e.g. `myserver_`. Defaults to an empty string. Include any separator in the prefix. Use a unique prefix to avoid collisions with built-in tools or other servers. |
 | `disabled` | No | When `true`, this server is skipped — handy for temporary disabling |
 
 ### Full Example
