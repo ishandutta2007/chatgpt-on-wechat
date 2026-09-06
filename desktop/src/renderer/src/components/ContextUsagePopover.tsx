@@ -48,7 +48,15 @@ const ContextUsagePopover: React.FC<ContextUsagePopoverProps> = ({ sessionId, ch
         setPos({ x: r.left + r.width / 2, y: r.top - 8 })
         try {
           const res = await apiClient.getContextUsage(sessionId)
-          if (openRef.current) setUsage(res)
+          if (!openRef.current) return
+          // Empty session → don't pop the usage card; collapse it so the
+          // button's plain title tooltip ("Clear context") shows instead.
+          if (!res || !res.available || !res.breakdown) {
+            openRef.current = false
+            setPos(null)
+            return
+          }
+          setUsage(res)
         } catch {
           if (openRef.current) setFailed(true)
         }

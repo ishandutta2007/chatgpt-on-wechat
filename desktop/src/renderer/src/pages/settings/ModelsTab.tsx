@@ -11,7 +11,6 @@ import {
   Check,
   Loader2,
   Pencil,
-  Trash2,
   Eye as EyeIcon,
   EyeOff,
   ExternalLink,
@@ -21,8 +20,6 @@ import apiClient from '../../api/client'
 import type {
   CapabilityState,
   ModelsData,
-  ModelCapability,
-  ModelCatalogEntry,
   ModelProvider,
   SearchCapabilityState,
 } from '../../types'
@@ -333,116 +330,6 @@ const VendorChip: React.FC<{ provider: ModelProvider; onClick: () => void }> = (
 
 const CUSTOM_PICK = '__custom_new__'
 
-// ============================================================
-// Model catalog editor — per-provider model list with metadata.
-// A saved catalog replaces the vendor's preset list. Entries tagged
-// "text" are the main-model (chat) candidates; the other tags route
-// entries into the matching specialized capability cards.
-// ============================================================
-
-const CAPABILITY_TAGS: { value: ModelCapability; labelKey: string }[] = [
-  { value: 'text', labelKey: 'models_cap_tag_text' },
-  { value: 'vision', labelKey: 'models_cap_vision' },
-  { value: 'video', labelKey: 'models_cap_tag_video' },
-  { value: 'image', labelKey: 'models_cap_image' },
-  { value: 'embedding', labelKey: 'models_cap_embedding' },
-  { value: 'asr', labelKey: 'models_cap_asr' },
-  { value: 'tts', labelKey: 'models_cap_tts' },
-]
-
-// Seed the editor from a provider's catalog, falling back to its preset
-// models (tagged "text" by default — presets are conversational models).
-const seedCatalog = (p?: ModelProvider): ModelCatalogEntry[] => {
-  if (p?.catalog?.length) return p.catalog.map((e) => ({ ...e, capabilities: [...e.capabilities] }))
-  if (p?.seed?.length) return p.seed.map((e) => ({ ...e, capabilities: [...e.capabilities] }))
-  return normEntries(p?.models).map((o) => ({ name: o.value, capabilities: ['text'] }))
-}
-
-const CatalogEditor: React.FC<{
-  entries: ModelCatalogEntry[]
-  onChange: (entries: ModelCatalogEntry[]) => void
-}> = ({ entries, onChange }) => {
-  const update = (idx: number, patch: Partial<ModelCatalogEntry>) => {
-    onChange(entries.map((e, i) => (i === idx ? { ...e, ...patch } : e)))
-  }
-  return (
-    <div className="space-y-2">
-      {entries.map((entry, idx) => (
-        <div key={idx} className="rounded-btn border border-default bg-inset p-2.5 space-y-2">
-          <div className="flex items-center gap-2">
-            <TextInput
-              className="font-mono flex-1"
-              value={entry.name}
-              placeholder="model-name"
-              onChange={(e) => update(idx, { name: e.target.value })}
-            />
-            <button
-              type="button"
-              onClick={() => onChange(entries.filter((_, i) => i !== idx))}
-              className="text-content-tertiary hover:text-danger cursor-pointer p-1"
-              title={t('models_delete')}
-            >
-              <Trash2 size={13} />
-            </button>
-          </div>
-          <div className="flex flex-wrap gap-1">
-            {CAPABILITY_TAGS.map(({ value, labelKey }) => {
-              const on = entry.capabilities.includes(value)
-              return (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() =>
-                    update(idx, {
-                      capabilities: on
-                        ? entry.capabilities.filter((c) => c !== value)
-                        : [...entry.capabilities, value],
-                    })
-                  }
-                  className={`px-1.5 py-0.5 rounded text-[11px] font-medium cursor-pointer transition-colors ${
-                    on
-                      ? 'bg-accent text-accent-contrast'
-                      : 'bg-surface-2 text-content-tertiary hover:text-content-secondary'
-                  }`}
-                >
-                  {t(labelKey)}
-                </button>
-              )
-            })}
-          </div>
-          <div className="flex gap-2">
-            <TextInput
-              type="number"
-              className="font-mono"
-              value={entry.context_window ?? ''}
-              placeholder={t('models_catalog_window')}
-              onChange={(e) =>
-                update(idx, { context_window: e.target.value === '' ? undefined : Number(e.target.value) })
-              }
-            />
-            <TextInput
-              type="number"
-              className="font-mono"
-              value={entry.max_output_tokens ?? ''}
-              placeholder={t('models_catalog_output')}
-              onChange={(e) =>
-                update(idx, { max_output_tokens: e.target.value === '' ? undefined : Number(e.target.value) })
-              }
-            />
-          </div>
-        </div>
-      ))}
-      <button
-        type="button"
-        onClick={() => onChange([...entries, { name: '', capabilities: ['text'] }])}
-        className="inline-flex items-center gap-1 text-xs text-accent hover:underline cursor-pointer"
-      >
-        <Plus size={12} /> {t('models_catalog_add')}
-      </button>
-    </div>
-  )
-}
-
 const VendorModal: React.FC<{
   provider: ModelProvider | null
   addMode: boolean
@@ -468,8 +355,6 @@ const VendorModal: React.FC<{
   const [keyDirty, setKeyDirty] = useState(false)
   const [keyVisible, setKeyVisible] = useState(false)
   const [apiBase, setApiBase] = useState('')
-  const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([])
-  const [catalogDirty, setCatalogDirty] = useState(false)
   const [saving, setSaving] = useState(false)
 
   // Load fields whenever the effective provider changes.
@@ -479,8 +364,6 @@ const VendorModal: React.FC<{
     setPickId(provider ? provider.id : firstUnconfigured?.id || '')
     setApiKey(init?.api_key_masked || '')
     setApiBase(init?.api_base || '')
-    setCatalog(seedCatalog(init))
-    setCatalogDirty(false)
     setKeyDirty(false)
     setKeyVisible(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -508,8 +391,6 @@ const VendorModal: React.FC<{
     const p = builtins.find((x) => x.id === val)
     setApiKey(p?.api_key_masked || '')
     setApiBase(p?.api_base || '')
-    setCatalog(seedCatalog(p))
-    setCatalogDirty(false)
     setKeyDirty(false)
   }
 
@@ -526,17 +407,6 @@ const VendorModal: React.FC<{
       if (keyDirty && apiKey && !MASK_RE.test(apiKey)) payload.api_key = apiKey
       if (hasBase) payload.api_base = apiBase
       await apiClient.modelsAction(payload)
-      if (catalogDirty) {
-        const res = await apiClient.modelsAction({
-          action: 'save_catalog',
-          provider_id: effective.id,
-          models: catalog.filter((e) => e.name.trim()),
-        })
-        if (res.status !== 'success') {
-          window.alert((res.message as string) || t('config_save_error'))
-          return
-        }
-      }
       await onSaved()
       onClose()
     } finally {
@@ -622,15 +492,6 @@ const VendorModal: React.FC<{
           />
         </Field>
       )}
-      <Field label={t('models_catalog')} hint={t('models_catalog_hint')}>
-        <CatalogEditor
-          entries={catalog}
-          onChange={(next) => {
-            setCatalog(next)
-            setCatalogDirty(true)
-          }}
-        />
-      </Field>
     </Modal>
   )
 }
@@ -645,8 +506,6 @@ const CustomProviderModal: React.FC<{
   const [apiBase, setApiBase] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [keyDirty, setKeyDirty] = useState(false)
-  const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([])
-  const [catalogDirty, setCatalogDirty] = useState(false)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -655,14 +514,11 @@ const CustomProviderModal: React.FC<{
       setName(editing.custom_name || localizedLabel(editing.label))
       setApiBase(editing.api_base || '')
       setApiKey(editing.api_key_masked || '')
-      setCatalog(seedCatalog(editing))
     } else {
       setName('')
       setApiBase('')
       setApiKey('')
-      setCatalog([])
     }
-    setCatalogDirty(false)
     setKeyDirty(false)
   }, [target, editing])
 
@@ -688,23 +544,7 @@ const CustomProviderModal: React.FC<{
       // edited the field (keyDirty) and it isn't the masked placeholder; send
       // the value even when empty so an explicit clear is honored server-side.
       if (keyDirty && !MASK_RE.test(apiKey)) payload.api_key = apiKey.trim()
-      const res = await apiClient.modelsAction(payload)
-      if (catalogDirty && res.status === 'success') {
-        // The backend echoes the provider id on create, so a brand-new
-        // provider can carry its catalog in the same save.
-        const pid = (res.id as string) || editing?.custom_id || ''
-        if (pid) {
-          const catRes = await apiClient.modelsAction({
-            action: 'save_catalog',
-            provider_id: `custom:${pid}`,
-            models: catalog.filter((e) => e.name.trim()),
-          })
-          if (catRes.status !== 'success') {
-            window.alert((catRes.message as string) || t('config_save_error'))
-            return
-          }
-        }
-      }
+      await apiClient.modelsAction(payload)
       await onSaved()
       onClose()
     } finally {
@@ -768,15 +608,6 @@ const CustomProviderModal: React.FC<{
           onChange={(e) => {
             setApiKey(e.target.value)
             setKeyDirty(true)
-          }}
-        />
-      </Field>
-      <Field label={t('models_catalog')} hint={t('models_catalog_hint')}>
-        <CatalogEditor
-          entries={catalog}
-          onChange={(next) => {
-            setCatalog(next)
-            setCatalogDirty(true)
           }}
         />
       </Field>

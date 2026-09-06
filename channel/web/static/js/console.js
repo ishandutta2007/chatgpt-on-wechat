@@ -95,7 +95,8 @@ const I18N = {
         models_clear_credential: '清除凭据',
         models_base_default_hint: '留空将使用官方默认地址',
         models_catalog: '模型列表',
-        models_catalog_hint: '维护该厂商可用的模型；勾选「文本模型」的可设为主模型并在会话中切换，其他标签决定模型出现在哪个能力位，窗口/最大输出留空则自动推断',
+        models_catalog_advanced: '（高级 · 可选）',
+        models_catalog_hint: '可选高级项：预置模型无需在此添加。仅当你要覆盖某个模型的上下文窗口/最大输出，或添加预置之外的自定义模型时才需要。留空则沿用预置模型',
         models_tag_text: '文本模型',
         models_catalog_add: '添加模型',
         models_catalog_window: '上下文窗口',
@@ -410,7 +411,7 @@ const I18N = {
         tip_clear_context: '清除上下文',
         ctx_usage_title: '上下文用量',
         ctx_system: '系统提示词',
-        ctx_tools: '工具定义',
+        ctx_tools: '工具和技能',
         ctx_history: '对话历史',
         ctx_free: '剩余可用',
         ctx_used_of: '已用 {used} / {limit}',
@@ -532,7 +533,8 @@ const I18N = {
         models_clear_credential: '清除憑據',
         models_base_default_hint: '留空將使用官方預設地址',
         models_catalog: '模型列表',
-        models_catalog_hint: '維護該廠商可用的模型；勾選「文本模型」的可設為主模型並在會話中切換，其他標籤決定模型出現在哪個能力位，窗口/最大輸出留空則自動推斷',
+        models_catalog_advanced: '（高級 · 可選）',
+        models_catalog_hint: '可選高級項：預置模型無需在此新增。僅當你要覆蓋某個模型的上下文視窗/最大輸出，或新增預置之外的自訂模型時才需要。留空則沿用預置模型',
         models_tag_text: '文本模型',
         models_catalog_add: '新增模型',
         models_catalog_window: '上下文窗口',
@@ -847,7 +849,7 @@ const I18N = {
         tip_clear_context: '清除上下文',
         ctx_usage_title: '上下文用量',
         ctx_system: '系統提示詞',
-        ctx_tools: '工具定義',
+        ctx_tools: '工具和技能',
         ctx_history: '對話歷史',
         ctx_free: '剩餘可用',
         ctx_used_of: '已用 {used} / {limit}',
@@ -964,7 +966,8 @@ const I18N = {
         models_clear_credential: 'Clear credentials',
         models_base_default_hint: 'Leave blank to use the official default base URL',
         models_catalog: 'Model catalog',
-        models_catalog_hint: 'Manage this provider\'s models. Entries tagged "Text" are selectable as the main model and in conversations; other tags route entries into the matching capability. Leave the window/max output blank to auto-detect',
+        models_catalog_advanced: '(Advanced · optional)',
+        models_catalog_hint: 'Optional advanced setting: preset models don\'t need to be added here. Use it only to override a model\'s context window / max output, or to add a custom model beyond the presets. Leave empty to keep the presets',
         models_tag_text: 'Text',
         models_catalog_add: 'Add model',
         models_catalog_window: 'Context window',
@@ -1279,7 +1282,7 @@ const I18N = {
         tip_clear_context: 'Clear Context',
         ctx_usage_title: 'Context usage',
         ctx_system: 'System prompt',
-        ctx_tools: 'Tool definitions',
+        ctx_tools: 'Tools & skills',
         ctx_history: 'Conversation',
         ctx_free: 'Free',
         ctx_used_of: '{used} / {limit} used',
@@ -1683,23 +1686,42 @@ function installContextUsagePopover() {
         _ctxUsageEl.style.top = (rect.top - elRect.height - 6) + 'px';
     };
 
+    // Show the plain "Clear context" tooltip on an empty session and the rich
+    // usage chart only once the session has real context. The chart popover and
+    // the CSS data-tooltip must never show at once, so we toggle data-tooltip:
+    // present (plain tip) while empty, removed while the chart is up.
+    const showPlainTip = () => {
+        btn.setAttribute('data-tooltip', t('tip_clear_context'));
+        _ctxUsageEl.classList.remove('show');
+    };
+    const showChart = (html) => {
+        btn.removeAttribute('data-tooltip');
+        _ctxUsageEl.innerHTML = html;
+        _ctxUsageEl.classList.add('show');
+        position();
+    };
+    // Start with the plain tooltip so an empty session behaves like any other
+    // button until the fetch says otherwise.
+    showPlainTip();
+
     btn.addEventListener('mouseenter', () => {
         clearTimeout(timer);
         timer = setTimeout(() => {
             open = true;
-            _ctxUsageEl.innerHTML = '<div class="ctx-usage-empty">…</div>';
-            _ctxUsageEl.classList.add('show');
-            position();
             fetch('/api/sessions/' + encodeURIComponent(sessionId) + '/context_usage')
                 .then((r) => r.json())
                 .then((data) => {
-                    if (open) {
-                        _ctxUsageEl.innerHTML = _ctxRenderCard(data);
-                        position();
+                    if (!open) return;
+                    // Empty session → keep the plain "Clear context" tooltip,
+                    // don't pop the chart.
+                    if (!data || data.status === 'error' || !data.available || !data.breakdown) {
+                        showPlainTip();
+                        return;
                     }
+                    showChart(_ctxRenderCard(data));
                 })
                 .catch(() => {
-                    if (open) _ctxUsageEl.innerHTML = _ctxRenderCard({ status: 'error' });
+                    if (open) showPlainTip();
                 });
         }, 120);
     });
@@ -1707,6 +1729,8 @@ function installContextUsagePopover() {
         clearTimeout(timer);
         open = false;
         _ctxUsageEl.classList.remove('show');
+        // Restore the plain tooltip for the next empty-session hover.
+        btn.setAttribute('data-tooltip', t('tip_clear_context'));
     });
     window.addEventListener('scroll', () => _ctxUsageEl.classList.remove('show'), true);
     window.addEventListener('resize', () => _ctxUsageEl.classList.remove('show'));
@@ -8717,7 +8741,7 @@ function initConfigView(data) {
     onProviderChange(cfgProviderValue);
     syncModelSelection(configCurrentModel);
 
-    document.getElementById('cfg-max-tokens').value = data.agent_max_context_tokens ?? 128000;
+    document.getElementById('cfg-max-tokens').value = data.agent_max_context_tokens ?? 64000;
     document.getElementById('cfg-max-turns').value = data.agent_max_context_turns || 20;
     document.getElementById('cfg-max-steps').value = data.agent_max_steps || 20;
     const thinkingEl = document.getElementById('cfg-enable-thinking');
@@ -11188,114 +11212,10 @@ function _persistCapability(capId, provider, model, onAfterSuccess, extras) {
 
 // ---------- Vendor credential modal ------------------------------------
 
-// =====================================================================
-// Model catalog editor — per-provider model list with metadata.
-// A saved catalog replaces the vendor's preset list; entries tagged
-// "chat" show up in the conversation model switcher, the other tags
-// route the model into the matching capability cards.
-// =====================================================================
-
-const CATALOG_TAGS = ['text', 'vision', 'video', 'image', 'embedding', 'asr', 'tts'];
-
-// Seed the editor rows from a provider's catalog, falling back to its
-// preset models (tagged "chat" by default so they stay chat-selectable).
-function seedCatalogEntries(provider) {
-    const clone = (e) => ({
-        name: e.name || '',
-        capabilities: Array.isArray(e.capabilities) ? [...e.capabilities] : ['text'],
-        context_window: e.context_window,
-        max_output_tokens: e.max_output_tokens,
-    });
-    if (provider && Array.isArray(provider.catalog) && provider.catalog.length) {
-        return provider.catalog.map(clone);
-    }
-    // Backend pre-types every preset with its real capabilities ("seed").
-    if (provider && Array.isArray(provider.seed) && provider.seed.length) {
-        return provider.seed.map(clone);
-    }
-    const presets = (provider && Array.isArray(provider.models)) ? provider.models : [];
-    return presets.map(m => clone({ name: typeof m === 'string' ? m : (m && m.value) || '' }));
-}
-
-function renderCatalogEditor(container, entries) {
-    const fieldCls = 'w-full px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-white/5 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500 font-mono transition-colors';
-    const tagCls = (on) => `px-1.5 py-0.5 rounded text-[11px] font-medium cursor-pointer transition-colors ${on ? 'bg-primary-500 text-white' : 'bg-slate-100 dark:bg-white/5 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'}`;
-    // escapeHtml covers text nodes only; attribute values also need quotes escaped.
-    const escapeAttr = (s) => escapeHtml(s).replace(/"/g, '&quot;');
-    container.innerHTML = entries.map((entry, idx) => `
-        <div class="rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 p-2.5 space-y-2" data-idx="${idx}">
-            <div class="flex items-center gap-2">
-                <input type="text" data-field="name" value="${escapeAttr(entry.name)}" placeholder="model-name"
-                       class="flex-1 min-w-0 ${fieldCls}">
-                <button type="button" data-action="remove"
-                        class="text-slate-400 hover:text-red-500 cursor-pointer p-1">
-                    <i class="fas fa-trash text-xs"></i>
-                </button>
-            </div>
-            <div class="flex flex-wrap gap-1">
-                ${CATALOG_TAGS.map(tag => `
-                    <button type="button" data-action="tag" data-tag="${tag}" class="${tagCls(entry.capabilities.includes(tag))}">${escapeHtml(t('models_tag_' + tag))}</button>`).join('')}
-            </div>
-            <div class="flex gap-2">
-                <input type="number" data-field="context_window" value="${entry.context_window ?? ''}"
-                       placeholder="${escapeHtml(t('models_catalog_window'))}" class="${fieldCls}">
-                <input type="number" data-field="max_output_tokens" value="${entry.max_output_tokens ?? ''}"
-                       placeholder="${escapeHtml(t('models_catalog_output'))}" class="${fieldCls}">
-            </div>
-        </div>`).join('');
-}
-
-// Wire a catalog container + its add button to the caller's live `entries`
-// array. Every mutation re-renders and calls onChange so the modal can mark
-// itself dirty (an untouched editor must not overwrite the saved catalog).
-function mountCatalogEditor(containerId, addBtnId, entries, onChange) {
-    const container = document.getElementById(containerId);
-    const addBtn = document.getElementById(addBtnId);
-    if (!container || !addBtn) return;
-
-    const rerender = () => renderCatalogEditor(container, entries);
-
-    container.oninput = (e) => {
-        const row = e.target.closest('[data-idx]');
-        const field = e.target.dataset.field;
-        if (!row || !field) return;
-        const idx = Number(row.dataset.idx);
-        if (field === 'name') {
-            entries[idx].name = e.target.value;
-        } else {
-            const v = String(e.target.value).trim();
-            entries[idx][field] = v === '' ? undefined : Number(v);
-        }
-        onChange();
-    };
-    container.onclick = (e) => {
-        const btn = e.target.closest('button[data-action]');
-        if (!btn) return;
-        const idx = Number(btn.closest('[data-idx]').dataset.idx);
-        if (btn.dataset.action === 'remove') {
-            entries.splice(idx, 1);
-        } else if (btn.dataset.action === 'tag') {
-            const caps = entries[idx].capabilities;
-            const pos = caps.indexOf(btn.dataset.tag);
-            if (pos >= 0) caps.splice(pos, 1); else caps.push(btn.dataset.tag);
-        } else {
-            return;
-        }
-        rerender();
-        onChange();
-    };
-    addBtn.onclick = () => {
-        entries.push({ name: '', capabilities: ['text'] });
-        rerender();
-        onChange();
-    };
-    rerender();
-}
-
 let vendorModalState = { providerId: '', onSaved: null };
 
 function openVendorModal(providerId, onSaved) {
-    vendorModalState = { providerId: providerId || '', onSaved: onSaved || null, catalog: [], catalogDirty: false };
+    vendorModalState = { providerId: providerId || '', onSaved: onSaved || null };
 
     const overlay = document.getElementById('vendor-modal-overlay');
     const titleEl = document.getElementById('vendor-modal-title');
@@ -11439,12 +11359,6 @@ function fillVendorModalForProvider(providerId) {
     const clearBtn = document.getElementById('vendor-modal-clear');
     clearBtn.classList.toggle('hidden', !meta.configured);
 
-    // ----- Model catalog -----
-    vendorModalState.catalog = seedCatalogEntries(meta);
-    vendorModalState.catalogDirty = false;
-    mountCatalogEditor('vendor-modal-catalog', 'vendor-modal-catalog-add',
-        vendorModalState.catalog, () => { vendorModalState.catalogDirty = true; });
-
     vendorModalState.providerId = providerId;
 }
 
@@ -11496,23 +11410,7 @@ function saveVendorModal() {
                 loadModelsView();
             }
         };
-        if (!vendorModalState.catalogDirty) {
-            finish();
-            return;
-        }
-        // Save an edited catalog right after the credentials (metadata only).
-        fetch('/api/models', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                action: 'save_catalog',
-                provider_id: providerId,
-                models: vendorModalState.catalog.filter(e => e.name && e.name.trim()),
-            }),
-        }).then(r => r.json()).then(cat => {
-            if (cat.status === 'success') finish();
-            else showStatus('vendor-modal-status', 'models_save_failed', true);
-        }).catch(() => showStatus('vendor-modal-status', 'models_save_failed', true));
+        finish();
     }).catch(() => {
         btn.disabled = false;
         showStatus('vendor-modal-status', 'models_save_failed', true);
@@ -11553,7 +11451,7 @@ let customProviderModalState = { editId: '' };
 
 function openCustomProviderModal(providerId) {
     const editing = !!providerId;
-    customProviderModalState = { editId: editing ? providerId : '', catalog: [], catalogDirty: false };
+    customProviderModalState = { editId: editing ? providerId : '' };
 
     const card = editing ? getCustomProviderCards().find(p => p.custom_id === providerId) : null;
 
@@ -11569,12 +11467,6 @@ function openCustomProviderModal(providerId) {
 
     nameInput.value = card ? (card.custom_name || '') : '';
     baseInput.value = card ? (card.api_base || '') : '';
-
-    // ----- Model catalog -----
-    customProviderModalState.catalog = seedCatalogEntries(card);
-    customProviderModalState.catalogDirty = false;
-    mountCatalogEditor('custom-provider-modal-catalog', 'custom-provider-modal-catalog-add',
-        customProviderModalState.catalog, () => { customProviderModalState.catalogDirty = true; });
 
     // Surface the masked key as the value for configured providers so the
     // "already set" state is unambiguous; an untouched masked value means
@@ -11673,33 +11565,8 @@ function saveCustomProviderModal() {
             showStatus('custom-provider-modal-status', 'models_save_failed', true);
             return;
         }
-        const finish = () => {
-            closeCustomProviderModal();
-            loadModelsView();
-        };
-        if (!customProviderModalState.catalogDirty) {
-            finish();
-            return;
-        }
-        // The backend echoes the provider id on create, so a brand-new
-        // provider can carry its catalog in the same save.
-        const pid = data.id || customProviderModalState.editId;
-        if (!pid) {
-            finish();
-            return;
-        }
-        fetch('/api/models', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                action: 'save_catalog',
-                provider_id: 'custom:' + pid,
-                models: customProviderModalState.catalog.filter(e => e.name && e.name.trim()),
-            }),
-        }).then(r => r.json()).then(cat => {
-            if (cat.status === 'success') finish();
-            else showStatus('custom-provider-modal-status', 'models_save_failed', true);
-        }).catch(() => showStatus('custom-provider-modal-status', 'models_save_failed', true));
+        closeCustomProviderModal();
+        loadModelsView();
     }).catch(() => {
         btn.disabled = false;
         showStatus('custom-provider-modal-status', 'models_save_failed', true);

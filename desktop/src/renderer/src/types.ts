@@ -677,7 +677,6 @@ export type ModelsAction =
   // card), but it is persisted through the same set_capability action, so it
   // is accepted here alongside its opt-in fields.
   | { action: 'set_capability'; capability: CapabilityKey | 'chat_fallback'; provider_id?: string; model?: string; voice?: string; strategy?: string; provider?: string; enabled?: boolean; max_switches?: number }
-  | { action: 'save_catalog'; provider_id: string; models: ModelCatalogEntry[] }
   | { action: 'set_voice_reply_mode'; mode: 'off' | 'voice_if_voice' | 'always' }
   | { action: 'set_search_credential'; api_key: string }
 
