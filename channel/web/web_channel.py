@@ -2092,6 +2092,7 @@ class WebChannel(ChatChannel):
             '/api/prompt/optimize', 'PromptOptimizeHandler',
             '/api/sessions/(.*)/clear_context', 'SessionClearContextHandler',
             '/api/sessions/(.*)/context_usage', 'SessionContextUsageHandler',
+            '/api/sessions/(.*)/compact_context', 'SessionCompactContextHandler',
             '/api/sessions/(.*)/settings', 'SessionSettingsHandler',
             '/api/sessions/(.*)', 'SessionDetailHandler',
             '/api/history', 'HistoryHandler',
@@ -7771,6 +7772,52 @@ class SessionContextUsageHandler:
             return json.dumps(usage)
         except Exception as e:
             logger.error(f"[WebChannel] Context usage error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+class SessionCompactContextHandler:
+    """Synchronous manual compaction (same logic as the /compact command).
+
+    Runs compact_context() on the live agent and returns the refreshed usage so
+    the frontend can redraw the pie without a separate fetch. peek_agent (not
+    get_agent) so an empty session is a no-op instead of building an agent.
+    """
+
+    def POST(self, session_id: str):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            if not session_id:
+                return json.dumps({"status": "error", "message": "session_id required"})
+
+            from bridge.bridge import Bridge
+            bridge = Bridge()
+            ab = bridge.get_agent_bridge()
+            agent = ab.peek_agent(session_id)
+            if agent is None:
+                # No live context — nothing to compact.
+                return json.dumps({
+                    "status": "success", "ok": False, "available": False,
+                    "compacted_turns": 0, "before": 0, "after": 0, "usage": None,
+                })
+
+            result = agent.compact_context()
+            usage = None
+            try:
+                usage = agent.get_context_usage()
+            except Exception:
+                pass
+
+            return json.dumps({
+                "status": "success",
+                "ok": bool(result.get("ok")),
+                "compacted_turns": result.get("compacted_turns", 0),
+                "before": result.get("before", 0),
+                "after": result.get("after", 0),
+                "usage": usage,
+            }, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"[WebChannel] Compact context error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
