@@ -2735,7 +2735,7 @@ class ConfigHandler:
         "zhipu_ai_api_key", "dashscope_api_key", "moonshot_api_key",
         "ark_api_key", "minimax_api_key", "linkai_api_key", "custom_api_key", "mimo_api_key",
         "custom_providers",
-        "agent_max_context_turns", "agent_max_steps",
+        "agent_max_context_tokens", "agent_max_context_turns", "agent_max_steps",
         "enable_thinking", "reasoning_effort", "reasoning_effort_by_model", "self_evolution_enabled", "web_password",
         "agent_permission_mode",
     }
@@ -2835,6 +2835,9 @@ class ConfigHandler:
                 "bot_type": "openai" if local_config.get("bot_type") == "chatGPT" else local_config.get("bot_type", ""),
                 "use_linkai": bool(local_config.get("use_linkai", False)),
                 "channel_type": local_config.get("channel_type", ""),
+                # Optional manual override for the input budget; 0/unset means
+                # derive it from the effective model's context window.
+                "agent_max_context_tokens": local_config.get("agent_max_context_tokens", 0),
                 "agent_max_context_turns": local_config.get("agent_max_context_turns", 20),
                 "agent_max_steps": local_config.get("agent_max_steps", 20),
                 "enable_thinking": bool(local_config.get("enable_thinking", False)),
@@ -2881,7 +2884,7 @@ class ConfigHandler:
                     continue
                 if key not in self.EDITABLE_KEYS:
                     continue
-                if key in ("agent_max_context_turns", "agent_max_steps"):
+                if key in ("agent_max_context_tokens", "agent_max_context_turns", "agent_max_steps"):
                     value = int(value)
                 if key in ("use_linkai", "enable_thinking", "self_evolution_enabled"):
                     value = bool(value)

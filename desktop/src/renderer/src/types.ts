@@ -519,6 +519,8 @@ export interface ConfigData {
   bot_type: string
   use_linkai: boolean
   channel_type: string
+  /** Optional manual override for the input budget; 0 = derive from the model. */
+  agent_max_context_tokens: number
   agent_max_context_turns: number
   agent_max_steps: number
   /** Global default permission for sessions that have not picked one. */

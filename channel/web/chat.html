@@ -910,6 +910,16 @@
                                     <div class="space-y-4">
                                         <div>
                                             <label class="flex items-center gap-1.5 text-sm font-medium text-slate-600 dark:text-slate-400 mb-1.5">
+                                                <span data-i18n="config_max_tokens">最大上下文 Token</span>
+                                                <span class="cfg-tip" data-tip-key="config_max_tokens_hint"><i class="fas fa-circle-question"></i></span>
+                                            </label>
+                                            <input id="cfg-max-tokens" type="number" min="0" max="10000000" step="1000"
+                                                   class="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600
+                                                          bg-slate-50 dark:bg-white/5 text-sm text-slate-800 dark:text-slate-100
+                                                          focus:outline-none focus:border-primary-500 font-mono transition-colors">
+                                        </div>
+                                        <div>
+                                            <label class="flex items-center gap-1.5 text-sm font-medium text-slate-600 dark:text-slate-400 mb-1.5">
                                                 <span data-i18n="config_max_turns">最大记忆轮次</span>
                                                 <span class="cfg-tip" data-tip-key="config_max_turns_hint"><i class="fas fa-circle-question"></i></span>
                                             </label>

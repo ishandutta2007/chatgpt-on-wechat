@@ -462,6 +462,10 @@ class Agent:
         # Approximates the executor's `_select_tools_for_injection()`, which is
         # only reachable mid-run; availability filtering matches the tool list
         # described in the prompt (see get_full_system_prompt).
+        # NOTE: this counts every available tool's schema, so it is an UPPER
+        # BOUND. When on-demand tool retrieval is on, `_select_tools_for_injection()`
+        # may inject only a subset per turn, so the live tools slice can be
+        # smaller than what the chart shows here.
         try:
             from agent.protocol.agent_stream import build_tools_schema
 

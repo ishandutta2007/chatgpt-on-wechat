@@ -134,17 +134,27 @@ class AgentInitializer:
             runtime_info=runtime_info,
         )
         
-        # Get cost control parameters. The context budget is derived from the
-        # effective model's context window (see Agent._get_model_context_window),
-        # so only the step limit is user-configured here.
+        # Get cost control parameters. The context budget is normally derived
+        # from the effective model's context window (see
+        # Agent._get_model_context_window). agent_max_context_tokens is an
+        # optional manual override: 0/unset means "derive from the model", a
+        # positive value forces that input ceiling (still clamped below the
+        # model window in _trim_messages) for gateways / self-hosted models
+        # whose real window we can't infer.
         from config import conf
         max_steps = conf().get("agent_max_steps", 20)
+        try:
+            max_context_tokens = int(conf().get("agent_max_context_tokens", 0) or 0)
+        except (TypeError, ValueError):
+            max_context_tokens = 0
+        max_context_tokens = max_context_tokens if max_context_tokens > 0 else None
 
         # Create agent
         agent = self.agent_bridge.create_agent(
             system_prompt=system_prompt,
             tools=tools,
             max_steps=max_steps,
+            max_context_tokens=max_context_tokens,
             output_mode="logger",
             workspace_dir=workspace_root,
             skill_manager=skill_manager,

@@ -85,6 +85,9 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
   const [apiKeyVisible, setApiKeyVisible] = useState(false)
 
   // agent card
+  // Optional manual override for the input budget; 0 means "derive from the
+  // effective model's context window".
+  const [maxTokens, setMaxTokens] = useState(0)
   const [maxTurns, setMaxTurns] = useState(20)
   const [maxSteps, setMaxSteps] = useState(20)
   const [thinking, setThinking] = useState(false)
@@ -145,6 +148,7 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
       const data = await apiClient.getConfig()
       setConfig(data)
       setModel(data.model || '')
+      setMaxTokens(data.agent_max_context_tokens ?? 0)
       setMaxTurns(data.agent_max_context_turns ?? 20)
       setMaxSteps(data.agent_max_steps ?? 20)
       setThinking(!!data.enable_thinking)
@@ -303,6 +307,7 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
       // other models' saved efforts are not overwritten by the flat config save.
       const effortKey = currentModelKey()
       await apiClient.updateConfig({
+        agent_max_context_tokens: maxTokens,
         agent_max_context_turns: maxTurns,
         agent_max_steps: maxSteps,
         enable_thinking: thinking,
@@ -524,6 +529,14 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
       {/* Agent */}
       <Card icon={<Bot size={16} />} title={t('config_agent')}>
         <div className="space-y-4">
+          <Field label={t('config_max_tokens')} hint={t('config_max_tokens_hint')}>
+            <TextInput
+              type="number"
+              className="font-mono"
+              value={maxTokens}
+              onChange={(e) => setMaxTokens(parseInt(e.target.value) || 0)}
+            />
+          </Field>
           <Field label={t('config_max_turns')} hint={t('config_max_turns_hint')}>
             <TextInput
               type="number"
