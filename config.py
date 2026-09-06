@@ -275,7 +275,10 @@ available_setting = {
     # Agent handling conversations that no channel instance binds. Defaults to
     # the first configured agent when unset.
     "default_agent_id": "",
-    "agent_max_context_tokens": 64000,  # max context tokens in Agent mode
+    # Routes inbound conversations to an agent. Each entry needs channel_type
+    # and agent_id; add conversation_id to bind one chat rather than the whole
+    # channel. Unbound conversations go to default_agent_id.
+    "agent_bindings": [],
     "agent_max_context_turns": 30,  # max context memory turns in Agent mode
     "agent_max_steps": 30,  # max decision steps per run in Agent mode
     # Default permission mode for sessions that have not picked one of their own:
