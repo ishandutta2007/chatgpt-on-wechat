@@ -653,6 +653,9 @@
 }
 
 /* Markdown Content */
+/* Break long words / URLs so they wrap inside the bubble instead of overflowing */
+.msg-content { overflow-wrap: anywhere; word-break: break-word; }
+.msg-content a { overflow-wrap: anywhere; word-break: break-word; }
 .msg-content p { margin: 0.5em 0; line-height: 1.7; }
 .msg-content p:first-child { margin-top: 0; }
 .msg-content p:last-child { margin-bottom: 0; }
@@ -678,6 +681,7 @@
 .msg-content :not(pre) > code {
     background: rgba(74, 190, 110, 0.1); color: #1C6B3B;
     padding: 2px 6px; border-radius: 4px;
+    overflow-wrap: anywhere; word-break: break-word;
 }
 .dark .msg-content :not(pre) > code {
     background: rgba(74, 190, 110, 0.15); color: #74E9A4;
