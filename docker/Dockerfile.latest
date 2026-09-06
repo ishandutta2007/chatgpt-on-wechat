@@ -23,8 +23,11 @@ RUN if [ "$USE_CN_MIRROR" = "true" ]; then \
 ADD . ${BUILD_PREFIX}
 
 # All heavy installs + user creation in ONE layer to avoid chown duplication
+# Retry apt-get update before install so stale package indexes (which cause
+# 404 on rolling security updates like libswscale5) get refreshed.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends bash ffmpeg espeak libavcodec-extra tzdata \
+    && (apt-get install -y --no-install-recommends bash ffmpeg espeak libavcodec-extra tzdata \
+        || (apt-get update && apt-get install -y --no-install-recommends bash ffmpeg espeak libavcodec-extra tzdata)) \
     && ln -snf /usr/share/zoneinfo/${TZ} /etc/localtime \
     && echo ${TZ} > /etc/timezone \
     && cd ${BUILD_PREFIX} \
