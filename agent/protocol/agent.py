@@ -1,9 +1,56 @@
 import json
 import os
+import re
 import time
 import threading
 
 from common.log import logger
+
+
+def _first_version(model_name: str):
+    """Extract the leading numeric version from a model name for comparison.
+
+    Returns a float so that e.g. gpt-5.6 / gpt-6 compare correctly against a
+    threshold, and future bumps (gpt-7, gpt-10) keep matching instead of
+    falling back to the conservative default. String comparison is avoided on
+    purpose: lexically "gpt-10" < "gpt-5", which would misclassify new models.
+
+    :return: the first version number as a float, or None when absent.
+    """
+    m = re.search(r'(\d+(?:\.\d+)?)', model_name or "")
+    if not m:
+        return None
+    try:
+        return float(m.group(1))
+    except (TypeError, ValueError):
+        return None
+
+
+# Known model families: total context window (tokens) and, when the provider
+# publishes a specific completion cap, its max output tokens. A None output
+# means "no published cap" and the caller falls back to a window-proportional
+# reserve. version_min gates a family by its leading version number so newer
+# releases keep matching (e.g. any gpt >= 5 is 1M/128K) instead of regressing
+# to the conservative default the moment a new model ships.
+#
+# (window, max_output) — max_output may be None.
+_MODEL_SPECS = {
+    # gpt-5.x / gpt-6 / future: 1M context, 128K max output.
+    "gpt": {"version_min": 5.0, "window": 1000000, "max_output": 128000},
+    # deepseek V4+: 1M context, 384K max output; legacy chat/reasoner: 64K.
+    "deepseek": {"version_min": 4.0, "window": 1000000, "max_output": 384000,
+                 "fallback_window": 64000},
+    # gemini: 1M context, 64K max output.
+    "gemini": {"window": 1000000, "max_output": 64000},
+    # claude: 200K context, 64K max output.
+    "claude": {"window": 200000, "max_output": 64000},
+    # GLM: only 5.3-flash ships a 1M window; older glm-5.x stays at 200K.
+    "glm": {"prefix": "glm-5.3-flash", "window": 1000000, "max_output": None,
+            "fallback_window": 200000},
+    # Qwen: only 3.8-flash ships a 1M window; keep others conservative.
+    "qwen": {"prefix": "qwen3.8-flash", "window": 1000000, "max_output": None,
+             "fallback_window": 128000},
+}
 from agent.protocol.models import LLMRequest, LLMModel
 from agent.protocol.agent_stream import AgentStreamExecutor
 from agent.protocol.result import AgentAction, AgentActionType, ToolResult, AgentResult
@@ -259,10 +306,79 @@ class Agent:
             return []
         return self.skill_manager.list_skills()
 
+    def _resolve_model_spec(self) -> tuple:
+        """
+        Resolve (context_window, max_output_tokens) for the current model.
+
+        Order of precedence:
+          1. the model's catalog entry (user-configured, always wins);
+          2. the built-in family table (_MODEL_SPECS), gated by version so new
+             releases keep matching instead of regressing to the default;
+          3. a conservative default (128K window, no explicit output cap).
+
+        max_output_tokens is None when no explicit cap is known — callers then
+        fall back to a window-proportional reserve.
+
+        :return: (context_window, max_output_tokens or None)
+        """
+        catalog_window = None
+        catalog_output = None
+        if self.model is not None and hasattr(self.model, 'catalog_model_meta'):
+            try:
+                meta = self.model.catalog_model_meta() or {}
+                catalog_window = meta.get('context_window')
+                catalog_output = meta.get('max_output_tokens')
+            except Exception:
+                pass
+
+        window = None
+        max_output = None
+        if self.model and hasattr(self.model, 'model'):
+            model_name = self.model.model.lower()
+            version = _first_version(model_name)
+            for family, spec in _MODEL_SPECS.items():
+                if family not in model_name:
+                    continue
+                prefix = spec.get("prefix")
+                version_min = spec.get("version_min")
+                if prefix is not None:
+                    # Family where only a specific model gets the large window
+                    # (e.g. glm-5.3-flash); everything else uses the fallback.
+                    if model_name.startswith(prefix):
+                        window = spec["window"]
+                        max_output = spec.get("max_output")
+                    else:
+                        window = spec.get("fallback_window", 128000)
+                        max_output = None
+                elif version_min is not None and (version is None or version < version_min):
+                    # Older release of a family that only bumped at version_min
+                    # (e.g. deepseek < v4): use its conservative fallback window.
+                    window = spec.get("fallback_window", 128000)
+                    max_output = None
+                else:
+                    window = spec["window"]
+                    max_output = spec.get("max_output")
+                break
+
+        # Catalog values override the family table (the user knows their model).
+        if catalog_window:
+            try:
+                window = int(catalog_window)
+            except (TypeError, ValueError):
+                pass
+        if catalog_output:
+            try:
+                max_output = int(catalog_output)
+            except (TypeError, ValueError):
+                pass
+
+        if not window:
+            window = 128000  # conservative default
+        return window, max_output
+
     def _get_model_context_window(self) -> int:
         """
         Get the model's *total* context window size in tokens (input + output).
-        Prefer the model's catalog entry; fall back to name-based detection.
 
         This is the hard ceiling the provider enforces on prompt tokens plus
         the completion budget. Trimming must leave room for the completion (see
@@ -271,94 +387,24 @@ class Agent:
 
         :return: Context window size in tokens
         """
-        # An explicit context_window on the model's catalog entry wins over
-        # the name heuristics below — the user knows their model best.
-        if self.model is not None and hasattr(self.model, 'catalog_model_meta'):
-            try:
-                window = (self.model.catalog_model_meta() or {}).get('context_window')
-                if window:
-                    return int(window)
-            except Exception:
-                pass
-        if self.model and hasattr(self.model, 'model'):
-            model_name = self.model.model.lower()
-
-            # Claude models - 200K context
-            if 'claude' in model_name:
-                return 200000
-
-            # GPT-4 models
-            elif 'gpt-4' in model_name:
-                if 'turbo' in model_name or '128k' in model_name:
-                    return 128000
-                elif '32k' in model_name:
-                    return 32000
-                else:
-                    return 8000
-
-            # GPT-3.5
-            elif 'gpt-3.5' in model_name:
-                if '16k' in model_name:
-                    return 16000
-                else:
-                    return 4000
-
-            # DeepSeek: V4 family ships a 1M window; legacy chat/reasoner is 64K.
-            elif 'deepseek' in model_name:
-                if 'v4' in model_name:
-                    return 1000000
-                return 64000
-
-            # Gemini models
-            elif 'gemini' in model_name:
-                if '2.0' in model_name or 'exp' in model_name:
-                    return 2000000  # Gemini 2.0: 2M tokens
-                else:
-                    return 1000000  # Gemini 1.5: 1M tokens
-
-            # GLM: 5.3 Flash ships a 1M window; older glm-5.x is 200K.
-            elif 'glm' in model_name:
-                if model_name.startswith('glm-5.3-flash'):
-                    return 1000000
-                return 200000
-
-            # Qwen: 3.8 Flash ships a 1M window; keep others conservative.
-            elif 'qwen' in model_name:
-                if model_name.startswith('qwen3.8-flash'):
-                    return 1000000
-                return 128000
-
-        # Default conservative value
-        return 128000
+        window, _ = self._resolve_model_spec()
+        return window
 
     def _get_output_reserve_tokens(self) -> int:
         """
-        Tokens to hold back from the input budget for the model's completion.
+        Tokens to hold back from the input budget so history is compacted before
+        the prompt fills the whole window (compaction fires at ~80% of it).
 
-        A model's context window is shared by the prompt and the reply. Providers
-        (and proxies such as LinkAI) attach a large default `max_tokens` for
-        agent-mode models — DeepSeek V4, for example, can be asked for up to 384K
-        output tokens. If we let the trimmed prompt fill the whole window, prompt +
-        that completion budget exceeds the window and the request is rejected with
-        "maximum context length ... you requested N tokens", which then loops.
-
-        Scale the reserve with the window so small models keep a modest buffer and
-        large ones (V4's 1M) reserve enough for their oversized completion default,
-        while never eating more than ~20% of the window (so the input budget can
-        use ~80%, in line with what Claude Code / Cursor / Cline do). An explicit
-        `max_output_tokens` on the model's catalog entry takes precedence —
-        that exact budget is what the request asks for.
+        This is a compaction threshold, NOT the request's max_tokens: it is a
+        fixed 20% of the window, giving an 80% input budget (in line with Claude
+        Code / Cursor / Cline). It deliberately does NOT use the model's static
+        max output tokens — coupling the two would drag the compaction line all
+        over the place (e.g. DeepSeek V4's 384K cap would compact at ~62%, not
+        80%). The actual completion cap sent to the provider is handled
+        separately by the bot (see each bot's max_tokens default).
         """
-        if self.model is not None and hasattr(self.model, 'catalog_model_meta'):
-            try:
-                max_output = (self.model.catalog_model_meta() or {}).get('max_output_tokens')
-                if max_output:
-                    return int(max_output)
-            except Exception:
-                pass
-        context_window = self._get_model_context_window()
-        # 20% of the window, leaving 80% for the input budget.
-        return int(context_window * 0.2)
+        window = self._get_model_context_window()
+        return int(window * 0.2)
 
     def _get_context_reserve_tokens(self) -> int:
         """
