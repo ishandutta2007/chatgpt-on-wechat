@@ -14,20 +14,25 @@ ENV BUILD_PREFIX=/app
 # Make the TZ env var effective at runtime (slim base has no tzdata by default)
 ENV TZ=${TZ}
 
-# Optionally switch apt and pip to China mirrors
-RUN if [ "$USE_CN_MIRROR" = "true" ]; then \
+# Optionally switch apt and pip to China mirrors.
+# bullseye is EOL: its debian-security pool returns 404 on removed versions, so
+# drop the debian-security lines and pull only from the still-mirrored main suite.
+RUN sed -i '/security/d' /etc/apt/sources.list \
+    && if [ "$USE_CN_MIRROR" = "true" ]; then \
         sed -i 's/deb.debian.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list; \
         pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple/; \
     fi
 
 ADD . ${BUILD_PREFIX}
 
-# All heavy installs + user creation in ONE layer to avoid chown duplication
-# Retry apt-get update before install so stale package indexes (which cause
-# 404 on rolling security updates like libswscale5) get refreshed.
+# All heavy installs + user creation in ONE layer to avoid chown duplication.
+# The base image ships perl-base from security (now 404 after EOL); downgrade it
+# to whatever version the main suite still offers so perl-dependent packages
+# resolve cleanly. Detect the candidate version dynamically to avoid pinning.
 RUN apt-get update \
-    && (apt-get install -y --no-install-recommends bash ffmpeg espeak libavcodec-extra tzdata \
-        || (apt-get update && apt-get install -y --no-install-recommends bash ffmpeg espeak libavcodec-extra tzdata)) \
+    && PERL_BASE_VER="$(apt-cache madison perl-base | awk '{print $3}' | head -n1)" \
+    && apt-get install -y --allow-downgrades "perl-base=${PERL_BASE_VER}" \
+    && apt-get install -y --no-install-recommends bash ffmpeg espeak libavcodec-extra tzdata \
     && ln -snf /usr/share/zoneinfo/${TZ} /etc/localtime \
     && echo ${TZ} > /etc/timezone \
     && cd ${BUILD_PREFIX} \
