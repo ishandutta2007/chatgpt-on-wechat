@@ -4410,7 +4410,12 @@ function _wsToast(msg) {
 async function refreshWorkspaceSelector() {
     const label = document.getElementById('workspace-selector-label');
     try {
-        const res = await fetch(`/api/projects?session=${encodeURIComponent(sessionId)}`);
+        // Scope the request to the active Agent so the default-workspace hint
+        // matches the file panel's real root in multi-Agent setups.
+        let url = `/api/projects?session=${encodeURIComponent(sessionId)}`;
+        const aid = (typeof activeAgentId !== 'undefined') ? activeAgentId : '';
+        if (aid) url += `&agent=${encodeURIComponent(aid)}`;
+        const res = await fetch(url);
         const data = await res.json();
         if (data.status !== 'success') return;
         _wsSelState = {
