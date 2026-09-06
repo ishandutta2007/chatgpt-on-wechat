@@ -82,3 +82,61 @@ const ContextUsageDonut: React.FC<ContextUsageDonutProps> = ({ slices, percent, 
 }
 
 export default ContextUsageDonut
+
+/**
+ * Tiny always-on donut for the composer button (16px, thin stroke). Shows the
+ * fill/percent at a glance without opening the card. An empty session is a
+ * faint full ring — the button always reads as a pie, never flips to an icon.
+ */
+export const ContextMiniPie: React.FC<{
+  slices?: { key: ContextSliceKey; value: number }[]
+  size?: number
+}> = ({ slices, size = 16 }) => {
+  const stroke = 4
+  const r = (size - stroke) / 2
+  const c = 2 * Math.PI * r
+  const list = slices || []
+  const total = list.reduce((sum, s) => sum + Math.max(0, s.value), 0)
+
+  if (total <= 0) {
+    return (
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="shrink-0">
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="currentColor" strokeWidth={stroke} opacity={0.35} />
+      </svg>
+    )
+  }
+
+  let offset = 0
+  const arcs = list.map((s) => {
+    const fraction = Math.max(0, s.value) / total
+    const arc = { ...s, fraction, start: offset }
+    offset += fraction
+    return arc
+  })
+
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="shrink-0">
+      {/* faint track */}
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="currentColor" strokeWidth={stroke} opacity={0.18} />
+      <g transform={`rotate(-90 ${size / 2} ${size / 2})`}>
+        {arcs.map(
+          (a) =>
+            a.fraction > 0 &&
+            a.key !== 'free' && (
+              <circle
+                key={a.key}
+                cx={size / 2}
+                cy={size / 2}
+                r={r}
+                fill="none"
+                stroke={CONTEXT_SLICE_COLORS[a.key]}
+                strokeWidth={stroke}
+                strokeDasharray={`${a.fraction * c} ${c}`}
+                strokeDashoffset={-a.start * c}
+              />
+            ),
+        )}
+      </g>
+    </svg>
+  )
+}

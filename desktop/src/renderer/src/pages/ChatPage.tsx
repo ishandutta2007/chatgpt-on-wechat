@@ -10,6 +10,7 @@ import {
   Terminal,
   type LucideIcon,
 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import MessageBubble from '../components/MessageBubble'
 import ChatInput, { type ChatInputHandle } from '../components/ChatInput'
 import { product } from '@product'
@@ -67,6 +68,13 @@ const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
   const scrollRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputResetRef = useRef<ChatInputHandle>(null)
+  const navigate = useNavigate()
+  // "Config" action on the context pie: jump to settings and flag the budget
+  // field to scroll/highlight (read in BasicSettings on mount).
+  const handleAdjustContext = useCallback(() => {
+    sessionStorage.setItem('cow_focus_max_tokens', '1')
+    navigate('/settings')
+  }, [navigate])
   const [loadingMore, setLoadingMore] = useState(false)
   const titlePendingRef = useRef(false)
 
@@ -318,7 +326,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
                     className="flex-1 h-px"
                     style={{ background: 'linear-gradient(to right, transparent, var(--border-strong), transparent)' }}
                   />
-                  <span className="text-xs whitespace-nowrap">{t('context_cleared')}</span>
+                  <span className="text-xs whitespace-nowrap">{msg.content || t('context_cleared')}</span>
                   <span
                     className="flex-1 h-px"
                     style={{ background: 'linear-gradient(to right, transparent, var(--border-strong), transparent)' }}
@@ -349,6 +357,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
         onClearContext={handleClearContext}
         isStreaming={isStreaming}
         sessionId={activeId}
+        onAdjustContext={handleAdjustContext}
         ref={inputResetRef}
       />
     </div>

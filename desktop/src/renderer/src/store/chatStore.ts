@@ -6,7 +6,17 @@ import { cfgFor } from './sessionSettingsStore'
 import { findAgent } from './agentStore'
 import { notifyRunDone } from '../lib/taskNotify'
 import { parseAttachmentMarkers } from '../lib/fileKind'
-import type { Artifact, ChatMessage, MessageStep, Attachment, StreamEvent, HistoryMessage, AgentBadge } from '../types'
+import { t } from '../i18n'
+import type { Artifact, ChatMessage, MessageStep, Attachment, StreamEvent, HistoryMessage, AgentBadge, ContextUsage } from '../types'
+
+// Result of a synchronous context compaction (mirrors the backend payload).
+export interface CompactResult {
+  ok: boolean
+  noop: boolean
+  before: number
+  after: number
+  usage: ContextUsage | null
+}
 
 /**
  * Per-session chat state. Supports parallel sessions: each session keeps its
@@ -38,6 +48,10 @@ interface ChatState {
 
   loadHistory: (sid: string, page?: number) => Promise<void>
   clearContext: (sid: string) => Promise<boolean>
+  // Synchronous context compaction. On success a divider is appended to the
+  // thread; the raw result is returned so the caller can refresh the pie and
+  // surface noop/failure toasts.
+  compactContext: (sid: string) => Promise<CompactResult>
   clearLocal: (sid: string) => void
 
   // Append a server-pushed message (scheduler/push) polled outside the SSE
@@ -684,6 +698,37 @@ export const useChatStore = create<ChatState>((set, get) => {
         return true
       } catch {
         return false
+      }
+    },
+
+    compactContext: async (sid) => {
+      const fail: CompactResult = { ok: false, noop: false, before: 0, after: 0, usage: null }
+      try {
+        const data = await apiClient.compactContext(sid, sessionOwner(sid) || undefined)
+        if (!data || data.status === 'error') return fail
+        const ok = !!data.ok
+        const before = data.before || 0
+        const after = data.after || 0
+        if (ok) {
+          // Drop a labeled divider into the thread so the summarize is visible,
+          // mirroring the web console (clear uses the same divider, unlabeled).
+          const label = t('ctx_compacted_divider')
+            .replace('{before}', String(before))
+            .replace('{after}', String(after))
+          patchMessages(sid, (msgs) => [
+            ...msgs,
+            {
+              id: uid('divider'),
+              role: 'system',
+              kind: 'divider',
+              content: label,
+              timestamp: Date.now() / 1000,
+            },
+          ])
+        }
+        return { ok, noop: !ok, before, after, usage: data.usage ?? null }
+      } catch {
+        return fail
       }
     },
 

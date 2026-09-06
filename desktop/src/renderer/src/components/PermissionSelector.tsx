@@ -12,9 +12,9 @@ import {
 } from '../lib/permission'
 
 const ICONS: Record<PermissionMode, React.ReactNode> = {
-  'full-access': <LockOpen size={13} />,
-  'workspace-write': <Shield size={13} />,
-  'read-only': <Eye size={13} />,
+  'full-access': <LockOpen size={15} />,
+  'workspace-write': <Shield size={15} />,
+  'read-only': <Eye size={15} />,
 }
 
 interface PermissionSelectorProps {

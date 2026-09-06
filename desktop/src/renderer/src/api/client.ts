@@ -531,6 +531,26 @@ class ApiClient {
     return this.request(this.scoped(`/api/sessions/${encodeURIComponent(sessionId)}/context_usage`, agentId))
   }
 
+  // Synchronous manual compaction (same logic as the /compact command). Returns
+  // the refreshed usage so the caller can redraw the chart without a refetch.
+  async compactContext(
+    sessionId: string,
+    agentId?: string,
+  ): Promise<{
+    status: string
+    ok?: boolean
+    available?: boolean
+    compacted_turns?: number
+    before?: number
+    after?: number
+    usage?: ContextUsage | null
+  }> {
+    return this.request(this.scoped(`/api/sessions/${encodeURIComponent(sessionId)}/compact_context`, agentId), {
+      method: 'POST',
+      body: JSON.stringify(agentId ? { agent_id: agentId } : {}),
+    })
+  }
+
   async getHistory(sessionId: string, page = 1, pageSize = 20, agentId?: string): Promise<HistoryPage> {
     return this.request<{ status: string } & HistoryPage>(
       this.scoped(

@@ -25,6 +25,21 @@ interface BasicSettingsProps {
 const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, onOpenModels }) => {
   const [config, setConfig] = useState<ConfigData | null>(null)
   const [loading, setLoading] = useState(true)
+  // When arriving from the context pie's "Config" action, scroll to and briefly
+  // highlight the max-context-tokens field (signal set in sessionStorage).
+  const [highlightBudget, setHighlightBudget] = useState(false)
+  useEffect(() => {
+    if (sessionStorage.getItem('cow_focus_max_tokens') !== '1') return
+    sessionStorage.removeItem('cow_focus_max_tokens')
+    const el = document.getElementById('cfg-max-tokens')
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      ;(el as HTMLInputElement).focus?.({ preventScroll: true })
+    }
+    setHighlightBudget(true)
+    const timer = setTimeout(() => setHighlightBudget(false), 2000)
+    return () => clearTimeout(timer)
+  }, [])
 
   // notifications card (client-side preference, applied instantly)
   const taskNotify = useUIStore((s) => s.taskNotify)
@@ -531,8 +546,11 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
         <div className="space-y-4">
           <Field label={t('config_max_tokens')} hint={t('config_max_tokens_hint')}>
             <TextInput
+              id="cfg-max-tokens"
               type="number"
-              className="font-mono"
+              className={`font-mono transition-shadow ${
+                highlightBudget ? 'ring-2 ring-accent/50 border-accent' : ''
+              }`}
               value={maxTokens}
               onChange={(e) => setMaxTokens(parseInt(e.target.value) || 0)}
             />

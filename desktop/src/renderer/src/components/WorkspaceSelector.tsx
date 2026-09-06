@@ -167,7 +167,7 @@ const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({ sessionId }) => {
               : 'text-content-secondary hover:text-accent hover:bg-accent-soft'
           }`}
         >
-          <FolderOpen size={13} className="shrink-0" />
+          <FolderOpen size={15} className="shrink-0 relative top-px" />
           {/* The default workspace is the implicit state, so the label there is
               just clutter — show the icon alone and only name a real project. */}
           {current && <span className="composer-chip-label truncate">{label}</span>}
