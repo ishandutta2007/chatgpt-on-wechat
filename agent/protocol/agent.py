@@ -344,7 +344,8 @@ class Agent:
 
         Scale the reserve with the window so small models keep a modest buffer and
         large ones (V4's 1M) reserve enough for their oversized completion default,
-        while never eating more than ~40% of the window. An explicit
+        while never eating more than ~20% of the window (so the input budget can
+        use ~80%, in line with what Claude Code / Cursor / Cline do). An explicit
         `max_output_tokens` on the model's catalog entry takes precedence —
         that exact budget is what the request asks for.
         """
@@ -356,10 +357,8 @@ class Agent:
             except Exception:
                 pass
         context_window = self._get_model_context_window()
-        # ~40% of the window, clamped to a sane floor/ceiling. 400K covers the
-        # 384K completion default that large-window agent models request.
-        reserve = int(context_window * 0.4)
-        return max(8000, min(400000, reserve))
+        # 20% of the window, leaving 80% for the input budget.
+        return int(context_window * 0.2)
 
     def _get_context_reserve_tokens(self) -> int:
         """
@@ -459,6 +458,24 @@ class Agent:
         # AGENT.md and refresh skills — far too heavy for a hover.
         system_tokens = self._estimate_text_tokens(self.system_prompt or "")
 
+        # The skills catalog is embedded in the system prompt (built by
+        # _build_skills_section), but it is really a capability listing — the
+        # menu of skills the agent can invoke — so the chart accounts for it
+        # together with the tool schemas rather than under the persona/AGENT.md
+        # "system" slice. Estimate it once and move it out of `system_tokens`
+        # into `tools_tokens` below. With 50+ skills this is the dominant chunk,
+        # so keeping it under "system" would badly misrepresent the breakdown.
+        skills_tokens = 0
+        try:
+            skills_prompt = self.get_skills_prompt()
+            if skills_prompt:
+                skills_tokens = self._estimate_text_tokens(skills_prompt)
+                # Don't let rounding/refresh drift drive the system slice
+                # negative if the two prompt builds diverge slightly.
+                system_tokens = max(0, system_tokens - skills_tokens)
+        except Exception as e:
+            logger.debug(f"[Agent] Skills token estimate skipped: {e}")
+
         # Approximates the executor's `_select_tools_for_injection()`, which is
         # only reachable mid-run; availability filtering matches the tool list
         # described in the prompt (see get_full_system_prompt).
@@ -479,12 +496,20 @@ class Agent:
             logger.debug(f"[Agent] Tool schema estimate skipped: {e}")
             tools_tokens = 0
 
+        # Fold the skills catalog into the tools/skills slice.
+        tools_tokens += skills_tokens
+
         history_tokens = sum(self._estimate_message_tokens(m) for m in self.messages)
 
-        # Mirrors the budget in AgentStreamExecutor._trim_messages.
+        # Chart denominator = min(user budget, model window). This is a DISPLAY
+        # ceiling only: it deliberately does NOT subtract the output reserve, so
+        # the bar shows the real usable limit (like Cursor showing the full
+        # window) rather than a reserve-adjusted number. Compaction still fires a
+        # little earlier, at the reserve-adjusted budget in
+        # AgentStreamExecutor._trim_messages — that logic is untouched, so "used"
+        # naturally starts shrinking just before it reaches this line.
         context_window = self._get_model_context_window()
-        input_ceiling = max(1, context_window - self._get_output_reserve_tokens())
-        limit = min(self.max_context_tokens, input_ceiling) if self.max_context_tokens else input_ceiling
+        limit = min(self.max_context_tokens, context_window) if self.max_context_tokens else context_window
 
         estimated_used = system_tokens + tools_tokens + history_tokens
         model_name = getattr(self.model, "model", None) if self.model else None
