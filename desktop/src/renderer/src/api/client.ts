@@ -14,6 +14,7 @@ import type {
   SessionsPage,
   SessionSettingsState,
   HistoryPage,
+  ContextUsage,
   ModelsData,
   ModelsAction,
   KnowledgeList,
@@ -524,6 +525,10 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify(agentId ? { agent_id: agentId } : {}),
     })
+  }
+
+  async getContextUsage(sessionId: string, agentId?: string): Promise<{ status: string } & ContextUsage> {
+    return this.request(this.scoped(`/api/sessions/${encodeURIComponent(sessionId)}/context_usage`, agentId))
   }
 
   async getHistory(sessionId: string, page = 1, pageSize = 20, agentId?: string): Promise<HistoryPage> {
